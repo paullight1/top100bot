@@ -1,0 +1,55 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    # Enforce native ARM64 on AWS Graviton (t4g) instances to avoid CPU emulation
+    platform: linux/arm64
+    restart: unless-stopped
+    # Bind only on loopback. Remove this ports section on a public VPS
+    # so FalkorDB is reachable only from the Compose network.
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      # Compose examples use /data; persistence docs also mention /var/lib/falkordb/data.
+      - falkordb_data:/data
+      - falkordb_data:/var/lib/falkordb/data
+    environment:
+      # Redis server flags (AOF + RDB). FalkorDB module flags belong in FALKORDB_ARGS.
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec --save 60 1"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  bot:
+    build: .
+    # Enforce native ARM64 compilation and execution on Graviton
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WHATSAPP_SESSION_PATH: /app/data/session.db
+      TTS_CACHE_DIR: /app/data/tts_cache
+      FALKORDB_HOST: falkordb
+    volumes:
+      - bot_data:/app/data
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  falkordb_data:
+  bot_data:

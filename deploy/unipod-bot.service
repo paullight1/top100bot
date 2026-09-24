@@ -1,0 +1,15 @@
+[Unit]
+Description=Unipod WhatsApp community bot
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/unipod-bot
+ExecStart=/usr/bin/uv run unipod-bot
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/unipod-bot/.env
+
+[Install]
+WantedBy=multi-user.target

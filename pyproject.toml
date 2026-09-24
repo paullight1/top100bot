@@ -1,0 +1,33 @@
+[project]
+name = "unipod-bot"
+version = "0.1.0"
+description = "Unipod innovators WhatsApp community bot"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "graphiti-core[falkordb]==0.30.2",
+    "neonize==0.4.3.post0",
+    "python-dotenv>=1.0.1,<2",
+    "groq>=0.16,<1",
+    "PyMuPDF>=1.24,<2",
+]
+
+[project.scripts]
+unipod-bot = "unipod_bot.main:run"
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/unipod_bot"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
