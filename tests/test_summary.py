@@ -49,7 +49,7 @@ def _settings(**kwargs) -> Settings:
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("2348011111111",),
         groq_api_keys=("gsk_test",),
     )
@@ -317,7 +317,7 @@ def test_runtime_summary_help_when_no_arguments():
 
     assert len(groq.prompts) == 0
     assert len(client.sent) == 1
-    assert "Unipod Summary Skill" in client.sent[0][1]
+    assert "Top100 AFL Summary Skill" in client.sent[0][1]
 
 
 def test_runtime_conversational_today_question(tmp_path: Path):

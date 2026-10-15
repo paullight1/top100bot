@@ -27,7 +27,7 @@ def test_audio_cache_key_generation():
 def test_audio_cache_put_and_get():
     with tempfile.TemporaryDirectory() as tmpdir:
         cache = AudioCache(tmpdir)
-        text = "Welcome to Unipod Innovators community!"
+        text = "Welcome to Top100 AFL community!"
         voice = "en_US-lessac-medium"
         data = b"\x00\x01\x02OGG_FAKE_AUDIO_DATA"
 

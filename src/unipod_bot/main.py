@@ -36,21 +36,28 @@ def register_handlers(client: NewAClient, settings: Settings, runtime: Runtime) 
             logger.exception("event=get_me_failed")
         logger.info("event=own_users users=%s", ",".join(sorted(runtime.own_users)) or "(none)")
         logger.info(
-            "ingest=all_groups reply_group=%s admins=%s debug=%s groq=%s graphiti=%s routing=step6_retrieval_heartbeat",
-            settings.test_group_jid or "(unset: routing in all groups)",
+            "group_scope=%s reply_group=%s admins=%s debug=%s groq=%s graphiti=%s routing=step6_retrieval_heartbeat",
+            "all_groups" if "*" in settings.test_group_jids else "test_allowlist" if settings.test_group_jids else "disabled",
+            settings.test_group_jid or "(unset)",
             ",".join(settings.admin_phones) or "(none)",
             settings.debug,
             f"on:{settings.groq_model}" if settings.groq_enabled else "off",
             "on:retrieval" if runtime.store is not None else "off",
         )
-        # Fetch group roster for member/admin awareness
-        await runtime.fetch_and_store_roster(client, settings.test_group_jid)
+        # Do not fetch participant rosters or private member profiles.
 
     @client.event(MessageEv)
     async def on_message(_: NewAClient, event: MessageEv) -> None:
         classified = classify_message(event, settings)
         if isinstance(classified, SkipReason):
-            logger.debug("event=message_skipped reason=%s", classified.value)
+            if classified is SkipReason.GROUP_NOT_ALLOWED:
+                from unipod_bot.jids import jid_str
+
+                source = getattr(getattr(event, "Info", None), "MessageSource", None)
+                chat = getattr(source, "Chat", None)
+                logger.info("event=group_ignored reason=%s group=%s", classified.value, jid_str(chat))
+            else:
+                logger.debug("event=message_skipped reason=%s", classified.value)
             return
         runtime.enqueue(classified)
 
@@ -110,7 +117,7 @@ async def async_main(settings: Settings) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="unipod-bot")
+    parser = argparse.ArgumentParser(prog="top100-afl-bot")
     parser.add_argument(
         "--check",
         action="store_true",

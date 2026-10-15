@@ -1,11 +1,13 @@
-# Agents.md — Unipod WhatsApp Community Bot
+# Agents.md — Top100 AFL WhatsApp Community Bot
 
 ## What this project is
 
-A WhatsApp bot that acts as an ambient member of the Unipod innovators
-community (multiple WhatsApp groups, same purpose: events, hackathons, and
-related discussion). Members are aware that **all text in connected groups is
-recorded** for learning and support.
+A WhatsApp bot that answers Top100 AFL questions using recent conversation
+context, public Top100 activities, and approved community facts. It processes
+messages only in the configured `TEST_GROUP_JID`; when no test group is set,
+group processing is disabled. Every text message in an allowlisted group is
+recorded for learning and support, so tell members before adding the bot to a
+group.
 
 The bot passively learns from group conversation (and, in later phases, shared
 documentation). It answers **in the group** when it has a grounded answer from
@@ -45,23 +47,27 @@ The bot holds useful conversations without a manually maintained system prompt.
 
 ## Community groups & knowledge scope
 
-- All connected groups serve the **same Unipod innovators community**; content
-  overlaps (events, hackathons, announcements). Cross-group retrieval is
-  intentional.
+- The initial deployment is restricted to one user-configured test group.
+  Do not process other group messages before the user authorizes a broader
+  rollout and members have been told that group text is recorded.
+- Do not fetch or use WhatsApp participant rosters, private member profiles,
+  or a Supabase service-role key. The Top100 activity API is public and read-only.
 - Graphiti episodes use a **shared logical partition** for retrieval (e.g.
-  `group_id = unipod:innovators`), while preserving **provenance** (actual
+  `group_id = top100_afl`), while preserving **provenance** (actual
   WhatsApp group JID, message id, sender, timestamp) in episode content or
   metadata.
-- Ingest **every group text message and PDF document** silently; replies follow
-  the policy below.
+- Ingest text and PDF documents only from the configured test group; replies
+  follow the policy below.
 
 ## Architecture (do not restructure without discussion)
 
-1. neonize listens to every message across all connected groups and DMs.
-2. Group text messages are buffered in memory (`IngestBuffer`) and pushed into
+1. neonize receives WhatsApp messages, but group messages outside the configured
+   test-group allowlist are dropped before logging, ingestion, routing, or reply.
+   If no allowlist is set, all group messages are dropped.
+2. Test-group text messages are buffered in memory (`IngestBuffer`) and pushed into
    Graphiti in batched episodes (interval timer or max batch size) — this
    drastically cuts Groq extraction token consumption and prevents 429 limits.
-3. PDF documents shared in groups are extracted, chunked, and ingested into
+3. PDF documents shared in the test group are extracted, chunked, and ingested into
    Graphiti with optional language translation. Users can also request documents
    via natural language (e.g. "send me the pdf") and the bot transmits the file.
 4. **Reply routing (groups):**

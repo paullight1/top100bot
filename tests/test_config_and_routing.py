@@ -25,7 +25,7 @@ def _settings(**kwargs) -> Settings:
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("2348011111111", "2348022222222"),
     )
     defaults.update(kwargs)
@@ -80,6 +80,14 @@ def test_groq_model_alias():
 def test_graphiti_group_id_strips_colon():
     assert normalize_graphiti_group_id("unipod:innovators") == "unipod_innovators"
     assert normalize_graphiti_group_id("unipod_innovators") == "unipod_innovators"
+    assert normalize_graphiti_group_id(None) == "top100_afl"
+
+
+def test_load_settings_uses_top100_graphiti_partition_by_default(monkeypatch):
+    monkeypatch.delenv("GRAPHITI_GROUP_ID", raising=False)
+    settings = load_settings(dotenv=False)
+    assert settings.graphiti_group_id == "top100_afl"
+    assert settings.falkordb_database == "top100_afl"
 
 
 def test_debug_false_uses_log_level():
@@ -109,7 +117,7 @@ def test_reply_group_gate():
     settings = _settings(test_group_jid="120363test@g.us")
     assert is_reply_group("120363test@g.us", settings)
     assert not is_reply_group("120363other@g.us", settings)
-    assert is_reply_group("120363other@g.us", _settings(test_group_jid=None))
+    assert not is_reply_group("120363other@g.us", _settings(test_group_jid=None))
 
 
 def _event(
@@ -174,14 +182,18 @@ def test_admin_dm_matches_lid_plus_phone_alt():
     assert "pong" in admin_dm_reply("ping", settings).lower()
 
 
-def test_classify_ingests_all_groups_marks_reply_eligible():
+def test_classify_ingests_only_allowlisted_test_group():
     settings = _settings(test_group_jid="120363test@g.us")
     other = classify_message(_event(chat_user="120363other"), settings)
     testg = classify_message(_event(chat_user="120363test"), settings)
-    assert other.is_reply_group is False
-    assert other.text == ""
+    assert other is SkipReason.GROUP_NOT_ALLOWED
     assert testg.is_reply_group is True
     assert testg.message_id == "ABC"
+
+
+def test_classify_skips_all_groups_until_test_group_is_configured():
+    settings = _settings(test_group_jid=None, test_group_jids=())
+    assert classify_message(_event(chat_user="120363test"), settings) is SkipReason.GROUP_NOT_ALLOWED
 
 
 def test_empty_admin_dm_is_skipped():

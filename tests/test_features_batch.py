@@ -148,7 +148,8 @@ def test_batched_episode_body_team_intent():
 # Feature 2: Reply-To Quoting Tests
 # =============================================================================
 
-def test_classify_message_attaches_event_obj():
+def test_classify_message_attaches_event_obj(monkeypatch):
+    monkeypatch.setenv("TEST_GROUP_JID", "120363430416381566@g.us")
     settings = load_settings(dotenv=False)
     fake_event = _make_event(text="Is the workshop tomorrow?")
 
@@ -215,7 +216,8 @@ def test_settings_tts_configuration(monkeypatch):
 # Feature 4 & 6: Voice Notes (/voice command) Tests
 # =============================================================================
 
-def test_classify_message_detects_voice_prefix():
+def test_classify_message_detects_voice_prefix(monkeypatch):
+    monkeypatch.setenv("TEST_GROUP_JID", "120363430416381566@g.us")
     settings = load_settings(dotenv=False)
     fake_event = _make_event(text="/voice When is the hackathon pitch day?")
 

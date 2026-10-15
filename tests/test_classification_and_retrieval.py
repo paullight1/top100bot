@@ -168,7 +168,7 @@ async def test_handle_user_dm_serves_pdf():
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("254700000000",),
         groq_api_keys=(),
         graphiti_wanted=False,

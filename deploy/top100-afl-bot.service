@@ -1,15 +1,15 @@
 [Unit]
-Description=Unipod WhatsApp community bot
+Description=Top100 AFL WhatsApp bot
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/unipod-bot
-ExecStart=/usr/bin/uv run unipod-bot
+WorkingDirectory=/opt/top100-afl-bot
+ExecStart=/usr/bin/uv run top100-afl-bot
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/unipod-bot/.env
+EnvironmentFile=/opt/top100-afl-bot/.env
 
 [Install]
 WantedBy=multi-user.target

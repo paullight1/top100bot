@@ -1,6 +1,6 @@
 # Memory (Graphiti + FalkorDB)
 
-Every group text is ingested as an episode. Replies search edges, episode text,
+Only text from the configured test group is ingested as an episode. Replies search edges, episode text,
 and node summaries in the shared `GRAPHITI_GROUP_ID` partition, then Groq
 answers only when Graphiti retrieval is grounded. Recent chat is prompt context
 after a hit, not a substitute for retrieval. Admin DMs may still use the recent
@@ -9,7 +9,7 @@ group log when Graphiti misses.
 ## Episode contract
 
 - `group_id`: shared community partition (`GRAPHITI_GROUP_ID`, default
-  `unipod_innovators`). Graphiti rejects `:`.
+  `top100_afl`). Graphiti rejects `:`.
 - FalkorDB graph / database name is that same `group_id`.
 - Episode **body**: Graphiti `actor: content` (`sender_jid: text`).
 - Provenance (group JID, sender, message id, timestamp) is in

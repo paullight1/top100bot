@@ -2,7 +2,7 @@
 
 Episode contract:
 - group_id: shared community partition (GRAPHITI_GROUP_ID). Colons are stripped;
-  Graphiti rejects them, so the default is unipod_innovators not unipod:innovators.
+  Graphiti rejects them, so the default is top100_afl.
 - FalkorDB database name matches group_id so Graphiti does not clone a second graph.
 - Episode name: WhatsApp message id (idempotent re-ingest on reconnect).
 - body: Graphiti EpisodeType.message format (`actor: content`).
@@ -50,7 +50,7 @@ def _retry_ingest(exc: BaseException) -> bool:
 
 
 COMMUNITY_EXTRACTION_INSTRUCTIONS = (
-    "Extract key entities and relationships for the Unipod innovators community:\n"
+    "Extract key entities and relationships for the Top100 AFL test-group conversation:\n"
     "- Events & Hackathons: Extract event names, dates, times, deadlines, rules, and themes. "
     "Use edge 'HAS_DEADLINE' or 'OCCURS_ON' to link events to their dates/deadlines.\n"
     "- People & Roles: Extract member handles (@phone or name), roles, and skills. "

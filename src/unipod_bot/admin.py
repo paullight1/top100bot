@@ -107,7 +107,7 @@ def handle_admin_dm(
 
     # --- status ---
     if lowered == "status":
-        test_group = settings.test_group_jid or "(all groups)"
+        test_group = settings.test_group_jid or "(group processing disabled)"
         mode = "✅ Known (Groq from Graphiti + chat)" if stub_known else "🔇 Unknown (silent + admin DM)"
         groq = f"✅ On — {settings.groq_model}" if settings.groq_enabled else "❌ Off"
         graphiti = (

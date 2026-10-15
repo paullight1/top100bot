@@ -1,4 +1,4 @@
-"""Meeting and event reminders module for Unipod WhatsApp Community Bot.
+"""Meeting and event reminders module for the Top100 AFL WhatsApp assistant.
 
 Detects meeting links (Google Meet, Skype, Zoom, Microsoft Teams) shared in groups,
 schedules reminders in a persistent SQLite store, and sends:

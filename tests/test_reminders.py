@@ -262,7 +262,7 @@ def _settings(tmp_path: Path) -> Settings:
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("254102838378",),
         admin_jids=("254102838378@s.whatsapp.net",),
     )

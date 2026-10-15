@@ -16,6 +16,7 @@ from unipod_bot.jids import is_group_jid, jid_str, jid_user
 class SkipReason(str, Enum):
     FROM_ME = "from_me"
     EMPTY_DM = "empty_dm"
+    GROUP_NOT_ALLOWED = "group_not_allowed"
 
 
 @dataclass(frozen=True)
@@ -223,7 +224,7 @@ def is_reply_group(chat_jid: str, settings: Settings) -> bool:
         parse_group_jids(settings.test_group_jid) if settings.test_group_jid else ()
     )
     if not targets:
-        return True
+        return False
     if "*" in targets or "all" in targets:
         return True
     chat_norm = chat_jid.strip().lower()
@@ -266,6 +267,8 @@ def classify_message(
     push_name = _push_name(event)
     if is_group_jid(chat):
         chat_str = jid_str(chat)
+        if not is_reply_group(chat_str, settings):
+            return SkipReason.GROUP_NOT_ALLOWED
         # Detect and strip /voice prefix before any further processing
         text, is_voice = _strip_voice_prefix(text)
         urls = extract_urls(text)

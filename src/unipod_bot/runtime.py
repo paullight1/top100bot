@@ -94,8 +94,8 @@ STUB_GROUP_REPLY = (
 )
 
 BOT_IDENTITY_FACTS: tuple[str, ...] = (
-    "Identity: The Unipod Bot is the ambient AI community assistant for the Unipod innovators community.",
-    "Purpose: The bot passively learns from community conversations, announcements, and shared PDF documents to provide grounded, factual answers to members.",
+    "Identity: The Top100 AFL assistant helps members with grounded answers from the configured test-group conversation and public Top100 activities.",
+    "Purpose: The bot uses recent conversation context, approved community facts, and public Top100 activity records to provide factual answers.",
     "Skills - Events & Hackathons: Answers questions about hackathons, workshops, innovation programs, lab schedules, rules, and deadlines.",
     "Skills - Collaboration: Matches team-seekers and innovators with complementary skills for hackathons and projects.",
     "Skills - Summary: Generates detailed activity briefings for specific dates or timeframes via the /summary skill (e.g. '/summary 24 sept', '/summary today', '/summary last 2 days', '/summary week', '/summary month', '/summary 2 weeks').",
@@ -104,7 +104,7 @@ BOT_IDENTITY_FACTS: tuple[str, ...] = (
     "Skills - Documents: Ingests shared PDFs and can share community documents on request via the document skill (e.g. 'send me the hackathon guide').",
     "Skills - Multilingual: Understands questions in English, Swahili, French, and other languages.",
     "Reliability: The bot never guesses or hallucinates. If it does not have a grounded answer, it stays silent in public groups and forwards the question to the admin team.",
-    "Administration: The bot is maintained by the Unipod community team (@254102838378, @254142340147).",
+    "Administration: The bot is maintained by the Top100 Africa Future Leaders team.",
 )
 
 _BOT_SELF_QUERY_RE = re.compile(
@@ -114,7 +114,7 @@ _BOT_SELF_QUERY_RE = re.compile(
     r"how does this bot work|how does the bot work|how do you work|who made you|who created you|"
     r"about the bot|about this bot|about bot|bot capabilities|bot features|what is your purpose|"
     r"how to use this bot|how to use the bot|how do i use this bot|can you do|are you a bot|your name|introduce yourself|"
-    r"what is unipod bot|tell me about yourself|help me bot|bot help|help bot|"
+    r"what is top100 afl bot|what is afl bot|tell me about yourself|help me bot|bot help|help bot|"
     # Swahili bot queries
     r"wewe ni nani|huyu bot ni nani|wewe ni bot|unafanya nini|unasaidiaje|unasaidia aje|"
     r"kazi ya bot|kazi yako ni nini|kuhusu bot|jinsi ya kutumia bot|"
@@ -762,7 +762,7 @@ class Runtime:
         self.ingest_count += 1
         self.daily_reporter.increment("messages_ingested")
         synthetic_msg = IncomingGroupMessage(
-            chat_jid=self.settings.test_group_jid or "unipod:admin",
+            chat_jid=self.settings.test_group_jid or "top100_afl_admin",
             sender_jid=msg.sender_jid,
             message_id=msg.message_id or uuid.uuid4().hex[:12],
             text=fact_with_provenance,

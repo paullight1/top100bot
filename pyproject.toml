@@ -1,7 +1,7 @@
 [project]
-name = "unipod-bot"
+name = "top100-afl-bot"
 version = "0.1.0"
-description = "Unipod innovators WhatsApp community bot"
+description = "Top100 Africa Future Leaders WhatsApp assistant"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-unipod-bot = "unipod_bot.main:run"
+top100-afl-bot = "unipod_bot.main:run"
 
 [dependency-groups]
 dev = ["pytest>=8,<9"]

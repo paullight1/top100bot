@@ -184,8 +184,8 @@ def _test_settings():
 
     return Settings(
         whatsapp_session_path=Path("data/session.db"),
-        test_group_jid=None,
-        test_group_jids=(),
+        test_group_jid="120363test@g.us",
+        test_group_jids=("120363test@g.us",),
         debug=False,
         log_level=20,
         falkordb_host="localhost",
@@ -193,7 +193,7 @@ def _test_settings():
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("254102838378",),
         admin_jids=(),
     )

@@ -72,15 +72,15 @@ class TopicHelper:
     """A domain-specific helper contact."""
 
     topic: str     # e.g. "bot", "programs", "events"
-    phone: str     # digits only, e.g. "254102838378"
-    name: str      # display name, e.g. "Admin"
+    phone: str     # digits only
+    name: str      # display name
 
 
 def parse_helpers_config(raw: str | None) -> tuple[TopicHelper, ...]:
     """Parse HELPERS_CONFIG env: 'topic:phone:Name,topic:phone:Name'.
 
     Each entry must have at least topic and phone. Name is optional.
-    Example: 'bot:254102838378:Admin,programs:254142340147:Ayuen'
+    Example: 'events:COUNTRYCODEDIGINSONLY:Admin'
     """
     helpers: list[TopicHelper] = []
     if not raw:
@@ -300,7 +300,7 @@ def resolve_groq_model(raw: str | None) -> str:
 def normalize_graphiti_group_id(raw: str | None) -> str:
     """Graphiti allows only ASCII letters, digits, underscore, and hyphen (no colon)."""
     cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", (raw or "").strip())
-    return cleaned or "unipod_innovators"
+    return cleaned or "top100_afl"
 
 
 def load_settings(*, dotenv: bool = True) -> Settings:
@@ -311,7 +311,7 @@ def load_settings(*, dotenv: bool = True) -> Settings:
     session = Path(os.getenv("WHATSAPP_SESSION_PATH", "data/session.db"))
     admin_jids = parse_jid_list(os.getenv("ADMIN_JIDS"))
     graphiti_group_id = normalize_graphiti_group_id(
-        os.getenv("GRAPHITI_GROUP_ID", "unipod_innovators")
+        os.getenv("GRAPHITI_GROUP_ID", "top100_afl")
     )
     falkor_db = os.getenv("FALKORDB_DATABASE", "").strip()
     test_group_raw = _optional_str("TEST_GROUP_JID")

@@ -84,12 +84,12 @@ def test_sanitize_for_chat_preserves_inline_hyphens_and_ranges():
 def test_sanitize_for_tts_converts_numbered_lists_to_spoken_transitions():
     text = (
         "Here are the instructions:\n"
-        "1. Open the Unipod portal\n"
+        "1. Open the Top100 AFL portal\n"
         "2. Join a team or create a new one\n"
         "3. Pitch your solution on demo day"
     )
     tts_text = sanitize_for_tts(text)
-    assert "First, Open the Unipod portal." in tts_text
+    assert "First, Open the Top100 AFL portal." in tts_text
     assert "Second, Join a team or create a new one." in tts_text
     assert "Third, Pitch your solution on demo day." in tts_text
     assert "1." not in tts_text
@@ -105,11 +105,11 @@ def test_sanitize_for_tts_converts_time_date_hyphen_ranges_to_to():
 
 
 def test_sanitize_for_tts_converts_separator_hyphens_to_commas():
-    text = "• Unipod Hackathon - Oct 15 - Main Lab"
+    text = "• Top100 AFL Workshop - Oct 15 - Main Lab"
     tts_text = sanitize_for_tts(text)
     # Bullet stripped, separator hyphens replaced with comma for natural speech pause
     assert "•" not in tts_text
-    assert "Unipod Hackathon, Oct 15, Main Lab." in tts_text
+    assert "Top100 AFL Workshop, Oct 15, Main Lab." in tts_text
 
 
 def test_sanitize_for_tts_strips_all_bullet_markers():
@@ -174,7 +174,7 @@ async def test_generate_known_reply_propagates_is_voice():
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("254102838378",),
         admin_jids=(),
     )
@@ -241,7 +241,7 @@ async def test_known_reply_empty_voice_sends_guidance():
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("254102838378",),
         admin_jids=(),
     )

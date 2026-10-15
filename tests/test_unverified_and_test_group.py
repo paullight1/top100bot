@@ -68,7 +68,7 @@ def _settings(**kwargs) -> Settings:
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("2348011111111",),
         admin_jids=("2348011111111@s.whatsapp.net",),
     )
@@ -137,9 +137,9 @@ def test_is_reply_group_wildcard():
     assert is_reply_group("120363anything@g.us", s)
 
 
-def test_is_reply_group_empty_allows_all():
+def test_is_reply_group_empty_denies_all():
     s = _settings(test_group_jid=None, test_group_jids=())
-    assert is_reply_group("120363anything@g.us", s)
+    assert not is_reply_group("120363anything@g.us", s)
 
 
 # --- Unverified info extraction & notification tests ---

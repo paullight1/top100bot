@@ -1,24 +1,27 @@
-# Unipod WhatsApp community bot
+# Top100 AFL WhatsApp assistant
 
-Headless Python service for the Unipod innovators community. It connects to
-WhatsApp with **neonize**, records **all group text** the bot can see, and (in
-later build steps) answers only when the answer is grounded. Unknown questions
-stay silent in the group; allowlisted **admins** are notified by DM.
+Headless Python service for Top100 Africa Future Leaders. It connects to
+WhatsApp with **neonize**, uses recent conversation and Top100's public
+activities to answer relevant questions, and keeps community memory in
+Graphiti/FalkorDB. Group processing is disabled until `TEST_GROUP_JID` is set;
+messages outside that allowlist are dropped before logging or ingestion.
 
-Members must be told that **all text in connected groups is recorded**.
+The bot records every text message in its configured group. Tell members before
+adding it to any group beyond the isolated test group.
 
-This document covers **local testing** and **VPS/Docker deployment**.
+This document covers local setup, **Dokploy deployment**, and direct Docker operations.
 
 ## What works today (build order step 6)
 
 | Feature | Status |
 | ------- | ------ |
 | QR / session pairing | Working |
-| Log every group text | Working |
+| Log allowlisted test-group text | Working |
 | Admin DMs (`ping`, `status`, `recent`) | Working |
 | Member DMs | Groq when Graphiti/recent chat is grounded; otherwise silent + admin notify. Private DMs are **not** ingested. |
-| Question / @-mention in the reply group | Groq from **Graphiti facts + recent chat**; unknown stays silent (+ admin DM unless you asked) |
+| Question / @-mention in the test group | Groq from **public Top100 activity records + Graphiti facts + recent chat**; unknown stays silent (+ admin DM unless you asked) |
 | Graphiti ingest + retrieval | Group text → FalkorDB episodes (`actor: content` + provenance in `source_description`); replies search with Graphiti hybrid + cross-encoder; low scores can be dropped |
+| Top100 activities | Read-only public `GET /api/events` lookup for relevant activity questions; no Supabase key or private profile data |
 | Reliability | Background queues, Groq/Graphiti retries, `event=heartbeat`, Compose `restart: unless-stopped`, systemd `Restart=always` |
 | Groq model id | `openai/gpt-oss-120b` |
 
@@ -41,13 +44,14 @@ Copy [`.env.example`](.env.example) to `.env`. Never commit `.env` or `data/sess
 | Variable | Purpose |
 | -------- | ------- |
 | `WHATSAPP_SESSION_PATH` | SQLite session (pair once, reuse) |
-| `TEST_GROUP_JID` | Optional `…@g.us`. **Ingest still logs all groups.** Replies (step 2+) only in this group when set. |
+| `TEST_GROUP_JID` | Required `…@g.us` to process any group. Only the configured test group is read; unset means group processing is disabled. |
+| `TOP100_API_BASE_URL` | Public activity API base URL; default `https://www.top100afl.com` |
 | `LOG_LEVEL` | `INFO` (default) or `WARNING` |
 | `DEBUG` | `true` / `false`. When true: DEBUG logs, file:line, skip reasons (`from_me`, `not_group`) |
 | `ADMIN_PHONES` | Comma-separated E.164 digits, no `+`. Multiple admins. |
 | `ADMIN_PHONE` | Single number; merged into the same allowlist |
 | `FALKORDB_*` | Used from step 4. Compose sets `FALKORDB_HOST=falkordb` for the bot container. |
-| `GRAPHITI_GROUP_ID` | Shared partition, default `unipod_innovators` (no colon) |
+| `GRAPHITI_GROUP_ID` | Graph partition, default `top100_afl` |
 | `GROQ_API_KEY` | Groq replies + Graphiti extraction |
 | `OPENAI_API_KEY` | Graphiti embeddings/rerank only (required for step 4 ingest) |
 | `GRAPHITI_ENABLED` | `true` (default) starts Graphiti when both keys are set |
@@ -69,18 +73,18 @@ Admin DMs: allowlisted numbers (`ADMIN_PHONES` / `ADMIN_JIDS`) get commands plus
 docker compose up -d falkordb
 ```
 
-On Ubuntu with `uv run unipod-bot` (not Docker for the bot), keep `FALKORDB_HOST=localhost`. Need ~2 GB extra RAM; skip FalkorDB on a 2 GB t4g or set `GRAPHITI_ENABLED=false`.
+On Ubuntu with `uv run top100-afl-bot` (not Docker for the bot), keep `FALKORDB_HOST=localhost`. Need ~2 GB extra RAM; skip FalkorDB on a 2 GB t4g or set `GRAPHITI_ENABLED=false`.
 
 3. Restart the bot. Look for `event=graphiti_ready` then after a group text `event=graphiti_ingested name=<whatsapp-id>`.
 4. Duplicate reconnects log `event=graphiti_skip_duplicate`.
 
-After ingest, a question in the reply group searches Graphiti (edge facts + episode text). Look for `event=graphiti_retrieved count=N`. If Graphiti is connected and count is 0, the bot stays silent (`event=retrieval_miss`) even if this process already logged other lines. Recent chat is used to **search** and to **word** a grounded answer, not to skip retrieval. Redeploy this code, then ask `When is hackathon` without restating the date — the Tuesday episode from earlier should come back as a community fact.
+After ingest, a question in the test group searches Graphiti (edge facts + episode text). Look for `event=graphiti_retrieved count=N`. Top100 activity facts are fetched separately when relevant. If Graphiti is connected and count is 0, the bot can still answer from a current matching public activity record; without either source or supporting recent context it stays silent (`event=retrieval_miss`).
 
 If FalkorDB or keys are missing, the bot still runs WhatsApp + Groq (`event=graphiti_disabled` or `event=graphiti_start_failed`). Look for `event=heartbeat` about once a minute (`worker_queue`, `ingest_queue`, Graphiti/Groq flags).
 
 Admin commands: `ping`, `status`, `help`, `recent` (last group lines this process), `stub known` (placeholder in-group reply to test send), `stub unknown` (default: silent + notify).
 
-In the reply group (`TEST_GROUP_JID`, or every group if unset): a **question** or **@-mention** does **not** get a public “I don’t know”. The bot DMs each admin with chat, sender, message id, timestamp, and text. Banter is ingested only. Set `TEST_GROUP_JID` before testing so community groups do not fan out notifies.
+In the configured test group, a **question** or **@-mention** does **not** get a public “I don’t know”. The bot DMs each admin with chat, sender, message id, timestamp, and text. Banter is ingested only. If `TEST_GROUP_JID` is empty, all group messages are ignored.
 
 ## How to test locally (recommended before VPS)
 
@@ -97,7 +101,7 @@ In the reply group (`TEST_GROUP_JID`, or every group if unset): a **question** o
 cd C:\Users\HP\Documents\Whatsapp_bot
 uv sync --group dev
 copy .env.example .env
-uv run unipod-bot --check
+uv run top100-afl-bot --check
 uv run pytest -q
 ```
 
@@ -106,25 +110,25 @@ uv run pytest -q
 ### Pair and watch ingestion
 
 1. Put a **dedicated** WhatsApp number on the phone you will pair (not your personal daily driver if you can avoid it).
-2. Add that number to **all community groups** you want recorded, plus one **test group** for future replies.
-3. In `.env` leave `TEST_GROUP_JID` empty for the first messages, or fill it after you copy a JID from logs.
+2. Add the linked number to the **test group only**. Do not add it to other groups during initial setup.
+3. If the group JID is unknown, pair while `TEST_GROUP_JID` is blank. The service reports `event=group_ignored ... group=<jid>` without message text; set `TEST_GROUP_JID` to that JID and restart before testing replies.
 4. Set `ADMIN_PHONES` to your number(s).
 5. Optional: `DEBUG=true` while testing.
 
 ```powershell
-uv run unipod-bot
+uv run top100-afl-bot
 ```
 
 Scan the terminal QR: **WhatsApp → Settings → Linked devices → Link a device**.
 
-Send a text in **any** connected group. You should see:
+Send a text in the configured test group. You should see:
 
 ```text
 event=group_message ingest=yes reply_eligible=true|false group=...@g.us sender=... id=... text=...
 ```
 
-- `ingest=yes` on every group = recording works.
-- `reply_eligible=false` on community groups when `TEST_GROUP_JID` is set to the test group only.
+- `ingest=yes` on the test group = recording works.
+- `event=group_ignored` for groups outside the configured allowlist or while it is blank. Ignored messages are not logged or ingested.
 - Second process start should **not** show a QR (session file under `data/`).
 
 Then in the **test group**, send a question (`when is the hackathon?`). The group should stay silent. Your admin DM should get an “Unknown question” notice. Logs: `event=admin_notified`. Send `recent` in the admin DM to see logged lines.
@@ -140,7 +144,23 @@ TEST_GROUP_JID=120363xxxxxxxx@g.us
 DEBUG=false
 ```
 
-Restart the bot and confirm community groups still ingest, with `reply_eligible=false`.
+Restart the bot and confirm group events are ignored until `TEST_GROUP_JID` matches the test group.
+
+## Dokploy deployment
+
+Create a **new Dokploy project/service** named `AFL WhatsApp Bot` from this
+repository's `paul/top100-afl-bot` branch. Deploy the existing Compose stack in
+that project, with its own persistent `bot_data` and `falkordb_data` volumes.
+Keep the FalkorDB port private; do not edit the existing Top100 project or its
+services. Set the non-secret `TOP100_API_BASE_URL` to
+`https://www.top100afl.com`. Leave `TEST_GROUP_JID` empty until the user pairs
+the WhatsApp number and configures the test group; with it empty, the service
+logs only ignored group JIDs and does not retain group messages. Add the bot
+only to the test group, tell its members that text is recorded, and enter any
+missing model/admin credentials directly into this new Dokploy service.
+
+The QR scan and group JID configuration are user steps. A running container
+without those steps is not a paired or operational WhatsApp bot.
 
 ## Docker Compose (bot + FalkorDB)
 
@@ -157,7 +177,7 @@ Useful commands:
 
 ```powershell
 docker compose logs -f --tail=200 bot
-docker compose exec bot uv run --no-dev unipod-bot --check
+docker compose exec bot uv run --no-dev top100-afl-bot --check
 docker compose restart bot
 docker compose ps
 ```
@@ -218,7 +238,7 @@ Repo on the instance (clone or scp). `.env` already filled.
 cd ~/Whatsapp_bot
 uv python pin 3.11
 uv sync
-uv run unipod-bot --check
+uv run top100-afl-bot --check
 ```
 
 `--check` must print `event=check_ok`. Confirm `admin_count` and `test_group` look right.
@@ -231,7 +251,7 @@ Add the bot number to the groups. Then:
 
 ```bash
 cd ~/Whatsapp_bot
-uv run unipod-bot
+uv run top100-afl-bot
 ```
 
 Scan the QR: **WhatsApp → Settings → Linked devices → Link a device**.
@@ -244,15 +264,15 @@ Success looks like:
 
 `Got 515`, websocket EOF, history-sync 400, duplicate contacts, and occasional `no sender key` on first join are **normal**. Ignore unless **new** texts never appear as `event=group_message`.
 
-`reply_eligible=false` means the chat is not `TEST_GROUP_JID`. Ingest still runs. Send text in the test group to see `reply_eligible=true`.
+`event=group_ignored` means the chat is not `TEST_GROUP_JID` or the setting is blank; the message body is not logged or ingested. Set the test-group JID and restart before testing replies.
 
-Restart with `uv run unipod-bot` should **not** show a QR (`data/session.db` is the session).
+Restart with `uv run top100-afl-bot` should **not** show a QR (`data/session.db` is the session).
 
 ### Keep it running: tmux (not Ctrl+B in a normal SSH shell)
 
-If you run `uv run unipod-bot` in plain SSH, **closing the window or Ctrl+C stops the bot**. `^B` on screen means you are **not** in tmux.
+If you run `uv run top100-afl-bot` in plain SSH, **closing the window or Ctrl+C stops the bot**. `^B` on screen means you are **not** in tmux.
 
-Stop a foreground bot: **Ctrl+C**. If SSH is stuck, another session: `pkill -f unipod-bot`.
+Stop a foreground bot: **Ctrl+C**. If SSH is stuck, another session: `pkill -f top100-afl-bot`.
 
 Then:
 
@@ -265,7 +285,7 @@ tmux new -s bot
 Green bar at the bottom = you are in tmux. Then start the bot:
 
 ```bash
-uv run unipod-bot
+uv run top100-afl-bot
 ```
 
 Detach (bot keeps running): **Ctrl+B**, **release**, then **D**.  
@@ -276,13 +296,13 @@ tmux ls                 # expect: bot: 1 windows
 tmux attach -t bot      # watch logs again
 ```
 
-`tmux new -s bot` then immediate `[detached]` creates an **empty** session. Attach and run `uv run unipod-bot` inside it, or:
+`tmux new -s bot` then immediate `[detached]` creates an **empty** session. Attach and run `uv run top100-afl-bot` inside it, or:
 
 ```bash
 tmux kill-session -t bot
 cd ~/Whatsapp_bot
 tmux new -s bot
-uv run unipod-bot
+uv run top100-afl-bot
 ```
 
 ### Debug logs (monitoring)
@@ -294,7 +314,7 @@ DEBUG=true
 LOG_LEVEL=INFO
 ```
 
-`DEBUG=true` forces DEBUG (skip reasons `from_me` / `empty_dm`, file:line). Restart the process after changing `.env` (Ctrl+C in tmux, then `uv run unipod-bot` again).
+`DEBUG=true` forces DEBUG (skip reasons `from_me` / `empty_dm`, file:line). Restart the process after changing `.env` (Ctrl+C in tmux, then `uv run top100-afl-bot` again).
 
 To review with a developer: `tmux attach -t bot`, copy a slice of log (especially `event=connected`, `event=group_message`, errors). Detach with Ctrl+B, D.
 
@@ -330,8 +350,8 @@ docker compose version
 ### 3. Clone and configure
 
 ```bash
-git clone <YOUR_REPO_URL> /opt/unipod-bot
-cd /opt/unipod-bot
+git clone <YOUR_REPO_URL> /opt/top100-afl-bot
+cd /opt/top100-afl-bot
 cp .env.example .env
 nano .env
 ```
@@ -348,19 +368,19 @@ WHATSAPP_SESSION_PATH=/app/data/session.db
 
 ### 4. Session file
 
-**Option A (recommended):** Pair on a laptop with `uv run unipod-bot`, stop the process, copy `data/session.db` (and `-wal`/`-shm` if present) to the VPS:
+**Option A (recommended):** Pair on a laptop with `uv run top100-afl-bot`, stop the process, copy `data/session.db` (and `-wal`/`-shm` if present) to the VPS:
 
 ```bash
-mkdir -p /opt/unipod-bot/data
+mkdir -p /opt/top100-afl-bot/data
 # from your PC, after pairing:
-scp data/session.db user@vps:/opt/unipod-bot/data/session.db
+scp data/session.db user@vps:/opt/top100-afl-bot/data/session.db
 ```
 
 If you use named volume `bot_data`, copy into the volume after first `compose up`, or switch the bot volume to a bind mount:
 
 ```yaml
 volumes:
-  - /opt/unipod-bot/data:/app/data
+  - /opt/top100-afl-bot/data:/app/data
 ```
 
 **Option B:** `docker compose up bot` with `tty: true`, `docker compose logs -f bot`, scan QR on the phone. Re-pair if the QR times out.
@@ -368,7 +388,7 @@ volumes:
 ### 5. Start
 
 ```bash
-cd /opt/unipod-bot
+cd /opt/top100-afl-bot
 docker compose up -d --build
 docker compose logs -f bot
 ```
@@ -400,10 +420,10 @@ Persist logs off-box later with a log shipper if you need it; stdout + Docker js
 ### 7. Updates
 
 ```bash
-cd /opt/unipod-bot
+cd /opt/top100-afl-bot
 git pull
 docker compose up -d --build
-docker compose exec bot uv run --no-dev unipod-bot --check
+docker compose exec bot uv run --no-dev top100-afl-bot --check
 ```
 
 Session volume is unchanged across rebuilds.
@@ -413,21 +433,21 @@ Session volume is unchanged across rebuilds.
 Compose already sets `restart: unless-stopped` on `bot` and `falkordb`. After a reboot:
 
 ```bash
-docker compose -f /opt/unipod-bot/docker-compose.yml up -d
+docker compose -f /opt/top100-afl-bot/docker-compose.yml up -d
 ```
 
 Optional systemd unit:
 
 ```ini
 [Unit]
-Description=Unipod WhatsApp bot
+Description=Top100 AFL WhatsApp bot
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/unipod-bot
+WorkingDirectory=/opt/top100-afl-bot
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=0
@@ -437,7 +457,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now unipod-bot.service
+sudo systemctl enable --now top100-afl-bot.service
 ```
 
 ## Reply policy (later steps)
@@ -445,7 +465,7 @@ sudo systemctl enable --now unipod-bot.service
 - In-group on **@-mention** or a **question** with grounded retrieval.
 - Default: short. Longer only when the answer cannot fit in a few sentences.
 - Unknown: **no group reply**; every admin in `ADMIN_PHONES` gets a DM (step 2).
-- While `TEST_GROUP_JID` is set, **do not reply** outside that group (ingest still runs everywhere).
+- Group processing and replies are limited to `TEST_GROUP_JID`; with no test-group JID, all groups are ignored. The bot does not fetch member rosters or private profiles.
 
 PDF ingest is **not** in v1.
 
@@ -464,5 +484,5 @@ PDF ingest is **not** in v1.
 ```powershell
 uv sync --group dev
 uv run pytest -q
-uv run unipod-bot --check
+uv run top100-afl-bot --check
 ```

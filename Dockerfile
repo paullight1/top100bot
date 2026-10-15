@@ -18,4 +18,4 @@ ENV PYTHONUNBUFFERED=1 \
 
 VOLUME ["/app/data"]
 
-CMD ["uv", "run", "--no-dev", "unipod-bot"]
+CMD ["uv", "run", "--no-dev", "top100-afl-bot"]

@@ -1,4 +1,4 @@
-"""Summary skill module for Unipod WhatsApp Community Bot.
+"""Summary skill module for the Top100 AFL WhatsApp assistant.
 
 Provides the /summary skill to generate detailed community briefings for specific dates
 and timeframes (e.g., specific dates like '24 sept', 'last 2 days', 'week', 'month', '2 weeks').
@@ -379,7 +379,7 @@ SKILL_RECOMMENDATION_TIP = (
     "(e.g., */summary today*, */summary 24 sept*, or */summary last 2 days*)."
 )
 
-DETAILED_SUMMARY_PROMPT = """You are the Unipod Community Bot. Generate a highly detailed, professional, and well-structured briefing of community activity for {label}.
+DETAILED_SUMMARY_PROMPT = """You are the Top100 AFL WhatsApp assistant. Generate a highly detailed, professional, and well-structured briefing of community activity for {label}.
 
 Community Messages & Discussions:
 {messages_text}
@@ -402,7 +402,7 @@ Instructions:
 
 Provide the detailed summary:"""
 
-CONCISE_SUMMARY_PROMPT = """You are the Unipod Community Bot. Provide a concise, clear summary of what happened today in the Unipod innovators community.
+CONCISE_SUMMARY_PROMPT = """You are the Top100 AFL WhatsApp assistant. Provide a concise, clear summary of what happened today in the Top100 AFL community.
 
 Community Messages Today:
 {messages_text}
@@ -418,7 +418,7 @@ Instructions:
 Provide the short summary:"""
 
 SUMMARY_HELP_CARD = (
-    "📋 *Unipod Summary Skill*\n\n"
+    "📋 *Top100 AFL Summary Skill*\n\n"
     "Get a detailed briefing of community discussions, hackathons, team formations, "
     "and resources for any date or timeframe.\n\n"
     "*How to use:*\n"

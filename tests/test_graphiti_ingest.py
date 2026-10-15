@@ -50,7 +50,7 @@ def _settings(**kwargs) -> Settings:
         falkordb_database="default_db",
         falkordb_username=None,
         falkordb_password=None,
-        graphiti_group_id="unipod_innovators",
+        graphiti_group_id="top100_afl",
         admin_phones=("2348011111111",),
     )
     defaults.update(kwargs)
@@ -156,7 +156,7 @@ def test_search_facts_collects_edges_episodes_and_summaries():
         ]
         nodes = [
             SimpleNamespace(name="2541@s.whatsapp.net", summary=""),
-            SimpleNamespace(name="Unipod Hackathon", summary="Scheduled for Tuesday"),
+            SimpleNamespace(name="Top100 AFL Workshop", summary="Scheduled for Tuesday"),
         ]
 
     class FakeGraphiti:
@@ -171,7 +171,7 @@ def test_search_facts_collects_edges_episodes_and_summaries():
         assert store.is_grounded(facts)
         assert "Hackathon is Tuesday as per agreement" in facts
         assert "2541@s.whatsapp.net: Hackathon is Tuesday now as per agreement" in facts
-        assert "Unipod Hackathon: Scheduled for Tuesday" in facts
+        assert "Top100 AFL Workshop: Scheduled for Tuesday" in facts
         assert "2541@s.whatsapp.net" not in facts
         assert not any("When is hackathon" in item for item in facts)
 
