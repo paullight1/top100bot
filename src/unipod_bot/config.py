@@ -198,6 +198,7 @@ class Settings:
     falkordb_password: str | None
     graphiti_group_id: str
     admin_phones: tuple[str, ...]
+    top100_api_base_url: str = "https://www.top100afl.com"
     admin_jids: tuple[str, ...] = ()
     test_group_jids: tuple[str, ...] = ()
     bot_phone: str | None = None
@@ -337,6 +338,10 @@ def load_settings(*, dotenv: bool = True) -> Settings:
         admin_phones=parse_phone_list(
             os.getenv("ADMIN_PHONES"),
             os.getenv("ADMIN_PHONE"),
+        ),
+        top100_api_base_url=(
+            os.getenv("TOP100_API_BASE_URL", "https://www.top100afl.com").strip().rstrip("/")
+            or "https://www.top100afl.com"
         ),
         admin_jids=admin_jids,
         test_group_jids=group_jids,

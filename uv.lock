@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.11.*"
 
 [[package]]
@@ -727,6 +727,7 @@ source = { editable = "." }
 dependencies = [
     { name = "graphiti-core", extra = ["falkordb"] },
     { name = "groq" },
+    { name = "httpx" },
     { name = "neonize" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
@@ -741,6 +742,7 @@ dev = [
 requires-dist = [
     { name = "graphiti-core", extras = ["falkordb"], specifier = "==0.30.2" },
     { name = "groq", specifier = ">=0.16,<1" },
+    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "neonize", specifier = "==0.4.3.post0" },
     { name = "pymupdf", specifier = ">=1.24,<2" },
     { name = "python-dotenv", specifier = ">=1.0.1,<2" },

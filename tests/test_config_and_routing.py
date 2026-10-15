@@ -61,6 +61,16 @@ def test_load_settings_admins_and_debug(monkeypatch):
     assert settings.short_term_max_messages == 30
 
 
+def test_load_settings_top100_api_base_url_defaults_to_public_site(monkeypatch):
+    monkeypatch.delenv("TOP100_API_BASE_URL", raising=False)
+    assert load_settings(dotenv=False).top100_api_base_url == "https://www.top100afl.com"
+
+
+def test_load_settings_top100_api_base_url_can_be_configured(monkeypatch):
+    monkeypatch.setenv("TOP100_API_BASE_URL", "https://example.test/")
+    assert load_settings(dotenv=False).top100_api_base_url == "https://example.test"
+
+
 def test_groq_model_alias():
     assert resolve_groq_model("gpt-oss-120b") == "openai/gpt-oss-120b"
     assert resolve_groq_model("openai/gpt-oss-120b") == "openai/gpt-oss-120b"
