@@ -28,7 +28,12 @@ services:
   bot:
     build: .
     restart: unless-stopped
-    env_file: .env
+    # Start with the checked-in non-secret defaults. Dokploy writes its
+    # service-specific values (including user-entered secrets) to .env; values
+    # from this later file override the template defaults.
+    env_file:
+      - .env.example
+      - .env
     environment:
       WHATSAPP_SESSION_PATH: /app/data/session.db
       TTS_CACHE_DIR: /app/data/tts_cache
