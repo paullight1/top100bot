@@ -80,6 +80,7 @@ from unipod_bot.summary import (
     is_today_question,
     parse_summary_time_range,
 )
+from unipod_bot.top100_activities import Top100ActivitiesClient, Top100Activity, is_activity_question
 from unipod_bot.text_sanitizer import sanitize_for_chat, sanitize_for_tts
 from unipod_bot.tts import PiperTTSClient, make_tts_client
 from unipod_bot.whatsapp import is_bot_mentioned, is_reply_to_bot, looks_like_question
@@ -231,6 +232,7 @@ class Runtime:
             self.own_users.add(settings.bot_phone)
             self.own_users.add(f"{settings.bot_phone}@s.whatsapp.net")
         self.recent = RecentGroupLog(settings.short_term_max_messages)
+        self.top100_activities = Top100ActivitiesClient(settings.top100_api_base_url)
         self.inbox = AdminInbox(settings)
         self.stub_known = bool(settings.groq_enabled)
         self.ingest_count = 0
@@ -792,7 +794,10 @@ class Runtime:
         if self.groq is None:
             return "GROQ_API_KEY is not set. Send recent, status, or ping."
         history = self.recent.format_lines(30)
-        facts = await self._retrieve_facts(retrieval_query(question, history))
+        graphiti_facts, activity_facts = await self._retrieve_answer_context(
+            question, history
+        )
+        facts = [*graphiti_facts, *activity_facts]
         if _is_bot_self_query(question):
             facts = list(dict.fromkeys((*BOT_IDENTITY_FACTS, *facts)))
         if self.store is not None and not (
@@ -1097,6 +1102,55 @@ class Runtime:
         logger.info("event=graphiti_retrieved count=%s", len(facts))
         return facts
 
+    async def _retrieve_answer_context(
+        self, question: str, history: str, quoted_text: str = ""
+    ) -> tuple[list[str], list[str]]:
+        """Return community-memory facts and current public activity facts separately."""
+        graphiti_facts = await self._retrieve_facts(
+            retrieval_query(question, history, quoted_text=quoted_text)
+        )
+        activity_facts: list[str] = []
+        if is_activity_question(question, f"{history}\n{quoted_text}"):
+            try:
+                activities = await self.top100_activities.fetch_relevant(
+                    question, f"{history}\n{quoted_text}"
+                )
+                activity_facts = [self._format_top100_activity(activity) for activity in activities]
+            except Exception as exc:
+                # Keep this log metadata-only; never include the message or API response.
+                logger.warning("event=top100_api_unavailable error=%s", type(exc).__name__)
+        return graphiti_facts, activity_facts
+
+    @staticmethod
+    def _format_top100_activity(activity: Top100Activity) -> str:
+        details = [f"[Top100 public events API] {activity.title}"]
+        if activity.summary:
+            details.append(f"Summary: {activity.summary}")
+        if activity.description:
+            details.append(f"Description: {activity.description}")
+        if activity.start_at:
+            try:
+                from zoneinfo import ZoneInfo
+
+                zone = ZoneInfo(activity.timezone or "Africa/Lagos")
+                start = activity.start_at.astimezone(zone)
+                end = activity.end_at.astimezone(zone) if activity.end_at else None
+                time_text = start.strftime("%a %d %b %Y, %I:%M %p %Z")
+                if end:
+                    time_text += f" to {end.strftime('%I:%M %p %Z')}"
+                details.append(f"Time ({activity.timezone or 'Africa/Lagos'}): {time_text}")
+            except Exception:
+                # A malformed optional timezone should not discard otherwise valid event data.
+                details.append(f"Time: {activity.start_at.isoformat()}")
+        if activity.location:
+            details.append(f"Location: {activity.location}")
+        if activity.programme_label:
+            details.append(f"Programme: {activity.programme_label}")
+        if activity.session_number is not None:
+            details.append(f"Session: {activity.session_number}")
+        details.append(f"Activity link: {activity.activity_url}")
+        return " | ".join(details)
+
     def _can_answer(self, facts: list[str]) -> bool:
         if self.store is None:
             return True
@@ -1127,7 +1181,10 @@ class Runtime:
         history = self.recent.format_chat(chat_jid)
         # Cross-group context: recent messages from other groups
         cross_group = self.recent.format_cross_group(exclude_jid=chat_jid)
-        facts = await self._retrieve_facts(retrieval_query(text, history, quoted_text=quoted_text))
+        graphiti_facts, activity_facts = await self._retrieve_answer_context(
+            text, history, quoted_text
+        )
+        facts = [*graphiti_facts, *activity_facts]
         self.daily_reporter.increment("graphiti_search_count")
         if _is_bot_self_query(text) or (quoted_text and _is_bot_self_query(quoted_text)):
             facts = list(dict.fromkeys((*BOT_IDENTITY_FACTS, *facts)))
@@ -1146,7 +1203,11 @@ class Runtime:
                 today_text = "\n".join(facts)
 
             if today_text.strip():
+                if activity_facts:
+                    today_text = f"{today_text}\n\nCurrent public Top100 activities:\n" + "\n".join(activity_facts)
                 short_prompt = CONCISE_SUMMARY_PROMPT.format(messages_text=today_text)
+                if activity_facts:
+                    short_prompt += "\nUse activity details only when supported by the supplied public records and include the activity link verbatim."
                 if is_voice:
                     short_prompt += "\n\nNote: The user requested voice mode. Provide fluid spoken conversational prose without raw bullets."
                 try:
@@ -1170,7 +1231,7 @@ class Runtime:
             )
             return None, []
         # Identify non-admin-sourced facts for verification forwarding
-        non_admin_facts = _extract_non_admin_facts(facts, self.settings.admin_phones)
+        non_admin_facts = _extract_non_admin_facts(graphiti_facts, self.settings.admin_phones)
         # Supplement with roster context if available
         roster_members = self.roster.get(chat_jid)
         if roster_members:

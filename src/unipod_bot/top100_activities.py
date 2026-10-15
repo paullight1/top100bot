@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+from unipod_bot.summary import is_today_question
 
 logger = logging.getLogger("unipod_bot")
 
@@ -53,6 +54,8 @@ class Top100Activity:
 
 def is_activity_question(question: str, history: str = "") -> bool:
     """Identify activity questions, including short follow-ups anchored by history."""
+    if is_today_question(question):
+        return True
     question_tokens = set(_tokens(question))
     if question_tokens & _ACTIVITY_WORDS:
         return True
@@ -198,6 +201,7 @@ class Top100ActivitiesClient:
         query_tokens = set(_tokens(question))
         history_tokens = set(_tokens(history))
         ranked: list[tuple[int, int, Top100Activity]] = []
+        today = datetime.now(ZoneInfo("Africa/Lagos")).date() if is_today_question(question) else None
         for index, row in enumerate(rows):
             activity = _activity(row)
             if activity is None:
@@ -210,7 +214,17 @@ class Top100ActivitiesClient:
             direct_score = len(query_tokens & event_tokens)
             context_score = len((history_tokens - query_tokens) & event_tokens)
             score = direct_score * 3 + context_score
+            if today and activity.start_at:
+                if activity.start_at.astimezone(_event_zone(activity.timezone)).date() == today:
+                    score += 100
             if score:
                 ranked.append((score, -index, activity))
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [activity for _, _, activity in ranked[:5]]
+
+
+def _event_zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name or "Africa/Lagos")
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("Africa/Lagos")
