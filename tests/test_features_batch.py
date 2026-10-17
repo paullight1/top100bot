@@ -229,7 +229,7 @@ def test_classify_message_detects_voice_prefix(monkeypatch):
 
 
 def test_send_voice_or_fallback_success():
-    settings = load_settings(dotenv=False)
+    settings = replace(load_settings(dotenv=False), knowledge_library_enabled=False)
     mock_client = MagicMock()
     mock_client.send_audio = AsyncMock()
     mock_client.send_message = AsyncMock()
@@ -258,7 +258,7 @@ def test_send_voice_or_fallback_success():
 
 
 def test_send_voice_or_fallback_graceful_fallback_on_tts_failure():
-    settings = load_settings(dotenv=False)
+    settings = replace(load_settings(dotenv=False), knowledge_library_enabled=False)
     mock_client = MagicMock()
     mock_client.send_audio = AsyncMock()
     mock_client.send_message = AsyncMock()

@@ -28,8 +28,11 @@ def preview(entry: KnowledgeEntry, page: int = 1) -> str:
     return (f"Knowledge {entry.id}: {entry.title}\nStatus: {entry.status}\n"
             f"Audience: {entry.audience}\nEffective: {entry.effective_at}\n"
             f"Expires: {entry.expires_at or 'none'}\nReplaces: {entry.replaces or 'none'}\n"
+            f"Superseded at: {entry.superseded_at or 'none'}\n"
             f"Source: {entry.filename or entry.source_url or 'admin text'}\n"
-            f"Submitted by: {entry.created_by}\nContent ({page}/{pages}):\n{body}\n\n"
+            f"Source message: {entry.source_message}\n"
+            f"Submitted by: {entry.created_by} at {entry.created_at}\n"
+            f"Published by: {entry.published_by or 'not approved'}\nContent ({page}/{pages}):\n{body}\n\n"
             f"Review all pages with: knowledge show {entry.id} PAGE\n"
             + (f"To approve: knowledge publish {entry.id}" if entry.status == "draft" else ""))
 
@@ -67,7 +70,9 @@ def handle_knowledge_command(library: KnowledgeLibrary, text: str, *, actor: str
             if not entries:
                 return "No entries on this page. Use knowledge draft to submit knowledge."
             return "Knowledge library (page " + str(page) + "):\n" + "\n".join(
-                f"{e.id} • {e.status} • {e.audience} • {e.title}" for e in entries)
+                f"{e.id} • {e.status}" +
+                ("/inactive" if e.status == "published" and not library.active(e.id, allow_admin=True) else "") +
+                f" • {e.audience} • {e.title}" for e in entries)
         if command == "show" and len(parts) in {3, 4}:
             return preview(library.get(parts[2]), int(parts[3]) if len(parts) == 4 else 1)
         if command == "publish" and len(parts) == 3:

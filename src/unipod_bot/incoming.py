@@ -96,9 +96,21 @@ def _chat_jid(event: Any) -> Any:
     return getattr(_source(event), "Chat", None)
 
 
-def _sender_jid(event: Any) -> Any:
+def _sender_jid(event: Any, settings: Settings | None = None) -> Any:
     source = _source(event)
-    return getattr(source, "SenderAlt", None) or getattr(source, "Sender", None)
+    # Protobuf submessages are truthy even when unpopulated. Prefer an alternate
+    # only when it carries a real identity, otherwise use the actual sender.
+    candidates = [candidate for candidate in
+                  (getattr(source, "SenderAlt", None), getattr(source, "Sender", None))
+                  if getattr(candidate, "User", None) or (isinstance(candidate, str) and candidate.strip())]
+    if settings:
+        for candidate in candidates:
+            if is_admin_jid(candidate, settings):
+                return candidate
+    for candidate in candidates:
+        if getattr(candidate, "Server", None) == "s.whatsapp.net":
+            return candidate
+    return candidates[0] if candidates else None
 
 
 def _push_name(event: Any) -> str:
@@ -113,14 +125,23 @@ def _find_document_message(payload: Any) -> Any:
     """Extract documentMessage from payload, handling documentWithCaptionMessage wrapping."""
     if payload is None:
         return None
-    doc = getattr(payload, "documentMessage", None)
+    def present(obj: Any, name: str) -> Any:
+        if hasattr(obj, "HasField"):
+            try:
+                if not obj.HasField(name):
+                    return None
+            except (ValueError, TypeError):
+                return None
+        return getattr(obj, name, None)
+
+    doc = present(payload, "documentMessage")
     if doc is not None:
         return doc
-    doc_caption = getattr(payload, "documentWithCaptionMessage", None)
+    doc_caption = present(payload, "documentWithCaptionMessage")
     if doc_caption is not None:
-        sub_msg = getattr(doc_caption, "message", None)
+        sub_msg = present(doc_caption, "message")
         if sub_msg is not None:
-            return getattr(sub_msg, "documentMessage", None)
+            return present(sub_msg, "documentMessage")
     return None
 
 
@@ -277,7 +298,7 @@ def classify_message(
         chat_str = jid_str(chat)
         if settings.knowledge_group_jid and chat_str.lower() == settings.knowledge_group_jid:
             # Check the sender, never the group's identity or an LLM claim.
-            sender = jid_str(_sender_jid(event))
+            sender = jid_str(_sender_jid(event, settings))
             if not is_admin_jid(sender, settings):
                 return SkipReason.GROUP_NOT_ALLOWED
             has_doc, filename, mimetype = extract_document_info(payload)
@@ -295,7 +316,7 @@ def classify_message(
         has_doc, doc_filename, doc_mimetype = extract_document_info(payload)
         return IncomingGroupMessage(
             chat_jid=chat_str,
-            sender_jid=jid_str(_sender_jid(event)),
+            sender_jid=jid_str(_sender_jid(event, settings)),
             message_id=_message_id(event),
             text=text,
             is_reply_group=is_reply_group(chat_str, settings),
@@ -319,7 +340,7 @@ def classify_message(
         text, is_voice = _strip_voice_prefix(text)
         return IncomingAdminDm(
             chat_jid=jid_str(chat),
-            sender_jid=jid_str(_sender_jid(event)),
+            sender_jid=jid_str(_sender_jid(event, settings)),
             message_id=_message_id(event),
             text=text,
             iso_time=iso_time,

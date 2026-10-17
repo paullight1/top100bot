@@ -38,6 +38,8 @@ Plain admin-feed messages and PDFs also create drafts. They default to **admin_o
 
 Readable PDFs up to 10 MB are accepted in admin DMs/the configured feed; scanned PDFs need selectable text before submission. There is an 80,000-character content limit. Oversize/unreadable documents are rejected rather than silently truncated. A PDF caption can contain the `knowledge draft Title | audience=members | ...` header. Its original extracted text is retained; the bot does not generate a summary and silently publish that instead.
 
+Knowledge submissions and document attachments posted in the member test group are excluded from bot memory in this mode. An admin receives a private instruction to resubmit in a DM/feed. If voice replies are enabled, approved excerpts retain their conditions and are accompanied by the original text and source links.
+
 Legacy `ingest <text>` now creates a private draft. `ingest on` enables automatic drafts of non-question admin statements; `ingest off` disables that convenience. Neither command automatically publishes anything. Publishing is an explicit admin action; review the full content and audience before using it.
 
 ## Replace, expire or withdraw

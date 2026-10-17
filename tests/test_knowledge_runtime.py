@@ -41,6 +41,25 @@ def test_feed_group_config_is_exact_and_default_library_enabled(monkeypatch):
     assert load_settings(dotenv=False).knowledge_library_enabled
 
 
+def test_real_neonize_message_with_empty_alternate_sender_authenticates_admin(tmp_path):
+    from neonize.proto import Neonize_pb2 as pb
+    ev = pb.Message()
+    ev.Info.ID = "real-proto"
+    ev.Info.MessageSource.Chat.CopyFrom(pb.JID(User="knowledge", Server="g.us"))
+    ev.Info.MessageSource.Sender.CopyFrom(pb.JID(User="2348011111111", Server="s.whatsapp.net"))
+    ev.Message.conversation = "Mentoring takes place on Tuesdays."
+    config = settings(tmp_path, knowledge_group_jid="knowledge@g.us")
+    job = classify_message(ev, config)
+    assert job.__class__.__name__ == "IncomingKnowledgeMessage"
+    assert job.sender_jid == "2348011111111@s.whatsapp.net"
+    assert not job.has_document
+    # WhatsApp can supply a LID alternate alongside a phone-based sender.
+    ev.Info.MessageSource.SenderAlt.CopyFrom(pb.JID(User="9988776655", Server="lid"))
+    job = classify_message(ev, config)
+    assert job.__class__.__name__ == "IncomingKnowledgeMessage"
+    assert job.sender_jid == "2348011111111@s.whatsapp.net"
+
+
 class Client:
     def __init__(self):
         self.sent = []
@@ -195,4 +214,86 @@ def test_published_library_answer_ignores_unapproved_graph_and_recent_claims(tmp
         reply, _ = await runtime._generate_known_reply(chat_jid="test@g.us", sender_jid="member",
             message_id="q", text="When is mentoring?", allow_stub=False)
         assert "Tuesdays" in reply and "Friday" not in reply
+    asyncio.run(run())
+
+
+def test_published_reply_preserves_literal_links_and_conditions_in_delivery(tmp_path):
+    import json
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        entry = runtime.knowledge.create_draft(title="Mentoring guide", content="Mentoring is free (only for fellows).",
+            source_url="https://example.org/mentoring_a_b", actor="admin", source_chat="admin",
+            source_message="source-with-url", audience="members")
+        runtime.knowledge.publish(entry.id, actor="admin")
+        class Model:
+            async def chat_completion(self, messages, **kw):
+                source = json.loads(messages[-1]["content"])["sources"][0]
+                return json.dumps({"answers_question": True, "conflict": False,
+                    "evidence": [{"source": source["id"], "quote": source["text"]}]})
+        runtime.groq = Model()
+        runtime.stub_known = True
+        member = IncomingUserDm(chat_jid="member", sender_jid="member", message_id="q",
+            text="Is mentoring free?", iso_time="", chat_obj="member")
+        await runtime._handle_user_dm(member)
+        text = runtime.client.sent[-1][1]
+        assert "https://example.org/mentoring_a_b" in text
+        assert "(only for fellows)" in text
+    asyncio.run(run())
+
+
+def test_library_voice_keeps_conditions_and_sends_original_source_text(tmp_path):
+    async def run():
+        client = Client()
+        client.send_audio = object()
+        runtime = Runtime(settings(tmp_path), client)
+        spoken = []
+        class TTS:
+            async def synthesize(self, text):
+                spoken.append(text)
+                return b"audio"
+        runtime.tts_client = TTS()
+        async def send_note(*args, **kwargs):
+            return True
+        runtime._send_voice_note = send_note
+        original = "Mentoring is free (only for fellows).\nhttps://example.org/a_b_c"
+        await runtime._send_voice_or_fallback("member", original)
+        assert "only for fellows" in spoken[0]
+        assert client.sent[-1][1] == original
+    asyncio.run(run())
+
+
+def test_member_group_pdf_and_knowledge_commands_do_not_enter_private_intake_or_history(tmp_path):
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        config = settings(tmp_path)
+        ev = event(chat="test", text="knowledge draft Confidential\nInternal-only notice.", pdf=True)
+        job = classify_message(ev, config)
+        await runtime._handle_group(job)
+        assert runtime.recent.format_chat("test@g.us") == "(none)"
+        assert not runtime.knowledge.list_entries()
+        assert runtime.ingest_queue.empty()
+        assert len(runtime.ingest_buffer._buffers) == 0
+        await runtime._handle_pdf_document(job)
+        assert not runtime.knowledge.list_entries()
+    asyncio.run(run())
+
+
+def test_pdf_revoked_after_blob_load_is_withheld_before_delivery(tmp_path):
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        lib = runtime.knowledge
+        entry = lib.create_draft(title="Mentoring guide", content="Mentoring is on Tuesday.",
+            actor="admin", source_chat="admin", source_message="revoked-document", audience="members",
+            attachment=b"%PDF-data", filename="guide.pdf")
+        lib.publish(entry.id, actor="admin")
+        original_document = lib.document
+        def concurrent_retirement(*args, **kwargs):
+            result = original_document(*args, **kwargs)
+            lib.retire(entry.id, actor="admin")
+            return result
+        lib.document = concurrent_retirement
+        msg = IncomingUserDm(chat_jid="member", sender_jid="member", message_id="download",
+            text=f"document {entry.id}", iso_time="", chat_obj="member")
+        await runtime._handle_pdf_request(msg)
+        assert not runtime.client.documents
     asyncio.run(run())

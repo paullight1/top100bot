@@ -43,6 +43,8 @@ def test_scheduled_replacement_switches_at_effective_time_and_never_resurrects(t
     new = draft(lib, "Mentoring is held on Fridays.", source_message="m2", replaces=old.id,
                 effective_at="2026-10-18T10:00:00Z", expires_at="2026-10-19T10:00:00Z")
     lib.publish(new.id, actor="admin", now=NOW)
+    assert lib.audit(old.id)[-1]["action"] == f"superseded_by:{new.id}"
+    assert lib.audit(old.id)[-1]["actor"] == "admin"
     assert lib.active(old.id, now=NOW)
     switch = datetime(2026, 10, 18, 10, tzinfo=timezone.utc)
     assert not lib.active(old.id, now=switch)

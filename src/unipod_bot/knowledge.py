@@ -179,6 +179,8 @@ class KnowledgeLibrary:
                 if switch < old["effective_at"]:
                     raise ValueError("A replacement cannot precede the original effective date.")
                 db.execute("UPDATE knowledge SET superseded_at=? WHERE id=?", (switch, old["id"]))
+                db.execute("INSERT INTO knowledge_audit(entry_id,action,actor,at) VALUES (?,?,?,?)",
+                           (old["id"], f"superseded_by:{entry_id}", actor, at))
             db.execute("UPDATE knowledge SET status='published',published_by=?,published_at=? WHERE id=?",
                        (actor, at, entry_id))
             db.execute("INSERT INTO knowledge_audit(entry_id,action,actor,at) VALUES (?,'publish',?,?)",
@@ -255,10 +257,10 @@ class KnowledgeLibrary:
     def document(self, entry_id: str, *, allow_admin: bool = False,
                  now: datetime | None = None) -> tuple[bytes, str] | None:
         with self._db() as db:
+            db.execute("BEGIN")
             row = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE id=?", (entry_id,)).fetchone()
-        if not row or not self._accessible(self._entry(row), allow_admin=allow_admin, now=now or utc_now()):
-            return None
-        with self._db() as db:
+            if not row or not self._accessible(self._entry(row), allow_admin=allow_admin, now=now or utc_now()):
+                return None
             blob = db.execute("SELECT attachment,filename FROM knowledge WHERE id=?", (entry_id,)).fetchone()
         return (bytes(blob["attachment"]), blob["filename"]) if blob and blob["attachment"] else None
 

@@ -488,10 +488,13 @@ class Runtime:
         """Synthesize and send a voice note (PTT). Falls back to text if disabled/failed."""
         if self.tts_client is not None and (hasattr(self.client, "send_audio") or hasattr(self.client, "upload")):
             try:
-                tts_text = sanitize_for_tts(text)
+                tts_text = (re.sub(r"https?://\S+", "See the source link in the accompanying text.", text)
+                            if self.knowledge is not None else sanitize_for_tts(text))
                 audio_bytes = await self.tts_client.synthesize(tts_text)
                 sent = await self._send_voice_note(chat_obj, audio_bytes, event_obj=event_obj)
                 if sent:
+                    if self.knowledge is not None:
+                        await self._send_or_reply(chat_obj, text, event_obj)
                     logger.info("event=voice_reply_sent bytes=%d", len(audio_bytes))
                     return True
             except Exception:
@@ -499,7 +502,7 @@ class Runtime:
                     "event=tts_voice_failed fallback_to_text=yes", exc_info=True
                 )
         # Fallback to chat text
-        clean_chat_text = sanitize_for_chat(text)
+        clean_chat_text = text if self.knowledge is not None else sanitize_for_chat(text)
         await self._send_or_reply(chat_obj, clean_chat_text, event_obj)
         return False
 
@@ -771,7 +774,7 @@ class Runtime:
                         await self._send_voice_or_fallback(msg.chat_obj, reply, getattr(msg, "event_obj", None))
                         logger.info("event=admin_dm_voice_replied chat=%s", msg.chat_jid)
                         return
-                    reply = sanitize_for_chat(reply)
+                    reply = reply if self.knowledge is not None else sanitize_for_chat(reply)
             else:
                 reply = result.reply
             try:
@@ -917,6 +920,15 @@ class Runtime:
         return text
 
     async def _handle_group(self, msg: IncomingGroupMessage) -> None:
+        if self.knowledge is not None and (msg.has_document or re.match(r"^knowledge(?:\s|$)", msg.text.strip(), re.I)):
+            # Private intake has exactly two routes: admin DMs and the optional
+            # dedicated feed. Reject misplaced submissions before any journaling.
+            if is_admin_jid(msg.sender_jid, self.settings):
+                user, _, server = msg.sender_jid.partition("@")
+                await self._send_or_reply(build_jid(user, server or "s.whatsapp.net"),
+                    "Please submit knowledge text/PDFs in this private DM or the configured knowledge feed. "
+                    "The member-group submission was not added to bot memory.")
+            return
         display = msg.text or "(non-text)"
         self.ingest_count += 1
         self.daily_reporter.increment("messages_ingested")
@@ -1048,7 +1060,7 @@ class Runtime:
                 self.daily_reporter.increment("questions_forwarded_to_admin")
                 await self._notify_admins(msg, trigger)
                 return
-            clean_reply = sanitize_for_chat(reply)
+            clean_reply = reply if self.knowledge is not None else sanitize_for_chat(reply)
             try:
                 if is_voice:
                     await self._send_voice_or_fallback(msg.chat_obj, reply, msg.event_obj)
@@ -1471,7 +1483,7 @@ class Runtime:
             if not reply:
                 await self._notify_admins_dm(msg)
                 return
-            clean_reply = sanitize_for_chat(reply)
+            clean_reply = reply if self.knowledge is not None else sanitize_for_chat(reply)
             try:
                 if is_voice:
                     await self._send_voice_or_fallback(msg.chat_obj, reply, msg.event_obj)
@@ -1586,14 +1598,6 @@ class Runtime:
     async def _handle_pdf_document(self, msg: IncomingGroupMessage) -> None:
         """Download, extract, and ingest PDF text. Mention existence in group."""
         if self.knowledge is not None:
-            if is_admin_jid(msg.sender_jid, self.settings):
-                user, _, server = msg.sender_jid.partition("@")
-                private = IncomingAdminDm(chat_jid=msg.chat_jid, sender_jid=msg.sender_jid,
-                    message_id=msg.message_id, text=msg.text, iso_time=msg.iso_time,
-                    chat_obj=build_jid(user, server or "s.whatsapp.net"), event_obj=msg.event_obj,
-                    has_document=True, document_filename=msg.document_filename,
-                    document_mimetype=msg.document_mimetype)
-                await self._handle_knowledge_message(private)
             return
         if not msg.has_document or not msg.document_filename:
             return
@@ -1785,7 +1789,7 @@ class Runtime:
             await self._send_or_reply(msg.chat_obj, reply, msg.event_obj)
             return
         document = await asyncio.to_thread(self.knowledge.document, candidates[0].id, allow_admin=allow_admin)
-        if document is not None:
+        if document is not None and await asyncio.to_thread(self.knowledge.active, candidates[0].id, allow_admin=allow_admin):
             data, filename = document
             await self.client.send_document(msg.chat_obj, data, filename=filename,
                 mimetype="application/pdf", quoted=msg.event_obj)
