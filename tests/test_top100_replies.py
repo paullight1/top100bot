@@ -14,6 +14,7 @@ from unipod_bot.top100_activities import Top100Activity
 
 def _settings() -> Settings:
     return Settings(
+        knowledge_library_enabled=False,
         whatsapp_session_path=Path("/tmp/top100-afl-replies-session.db"),
         test_group_jid="test@g.us",
         debug=False,

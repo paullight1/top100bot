@@ -1,5 +1,17 @@
 # Agents.md — Top100 AFL WhatsApp Community Bot
 
+## Curated knowledge mode (default; approved 2026-10-17)
+
+`KNOWLEDGE_LIBRARY_ENABLED=true` supersedes legacy rules below that treat ordinary Graphiti/group/admin messages as verified official knowledge. Keep Graphiti/FalkorDB as conversational memory. The SQLite knowledge catalog alongside the session file owns authoritative content, lifecycle and audience; it does not replace the graph store.
+
+- Only configured admins can submit/manage knowledge. `KNOWLEDGE_GROUP_JID` is optional, exact, separate from the test reply allowlist, and rejects non-admin senders before content logging. Feed acknowledgements go to the submitting admin by DM. Feed messages never enter recent chat, Graphiti, summaries or the old PDF pool.
+- Every submission is a draft until `knowledge publish ID`; defaults are admin_only. Legacy ingest/automatic admin statements create drafts. `knowledge audience ID members|admin_only` changes drafts only. Published entries are immutable and replaced by new versions with explicit predecessor IDs.
+- Member answers/downloads can use only currently effective, published, unexpired, unsuperseded member entries or current public Top100 activity records. Private entries are accessible only through authenticated admin DMs, including when the requester is an admin in a member group. Apply lifecycle checks again after a model call.
+- Factual answers select literal source excerpts, validate sentence/field boundaries, and append application-generated source labels. Ordinary chat/bot replies cannot supply official evidence. Fail closed for missing/invalid evidence and model-reported conflicts; notify admin through existing unknown handling. No Graphiti auto-corrections in this mode. Do not claim that hallucinations are impossible.
+- PDFs submitted by admins create private drafts; non-admin group PDFs are not official knowledge. Only published accessible PDFs may be downloaded. Preserve SQLite/PDFs on the existing /app/data volume; don't log content or credentials.
+- Keep `/summary` and reminders as conversational skills; never include private feed content in their inputs. Do not modify the Top100 backend/schema or other Dokploy services.
+- `KNOWLEDGE_LIBRARY_ENABLED=false` retains legacy behavior below for compatibility and dedicated legacy tests. Production should retain the default true setting.
+
 ## What this project is
 
 A WhatsApp bot that answers Top100 AFL questions using recent conversation

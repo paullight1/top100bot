@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -370,7 +371,7 @@ def test_typing_presence_graceful_when_no_send_chat_presence():
 def test_admin_dm_uses_quoted_reply():
     from unipod_bot.incoming import IncomingAdminDm
 
-    settings = load_settings(dotenv=False)
+    settings = replace(load_settings(dotenv=False), admin_jids=("admin@s.whatsapp.net",))
     mock_client = MagicMock()
     mock_client.reply_message = AsyncMock()
     mock_client.send_message = AsyncMock()
@@ -398,7 +399,7 @@ def test_admin_dm_uses_quoted_reply():
 
 
 def test_pdf_request_quotes_original_message():
-    settings = load_settings(dotenv=False)
+    settings = replace(load_settings(dotenv=False), knowledge_library_enabled=False)
     mock_client = MagicMock()
     mock_client.send_document = AsyncMock()
 

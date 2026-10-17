@@ -163,7 +163,7 @@ async def test_generate_known_reply_propagates_is_voice():
     from unipod_bot.config import Settings
     from unipod_bot.runtime import Runtime
 
-    settings = Settings(
+    settings = Settings(knowledge_library_enabled=False,
         whatsapp_session_path=Path("data/session.db"),
         test_group_jid=None,
         test_group_jids=(),

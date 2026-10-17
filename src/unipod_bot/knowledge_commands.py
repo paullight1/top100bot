@@ -14,6 +14,7 @@ Put the approved facts on the next line. Every option is optional; audience defa
 knowledge show ENTRY_ID [page] — review content and metadata
 knowledge list [page] — list drafts and versions
 knowledge publish ENTRY_ID — approve this exact draft
+knowledge audience ENTRY_ID members|admin_only — classify a draft before publishing
 knowledge retire ENTRY_ID — withdraw an entry
 
 Send PDFs here or in the configured knowledge group to create drafts. PDFs require readable text and must be 10 MB or less. Dates without times use midnight Lagos. Publishing is explicit; ingestion acknowledgements do not mean publication."""
@@ -73,6 +74,8 @@ def handle_knowledge_command(library: KnowledgeLibrary, text: str, *, actor: str
             entry = library.publish(parts[2], actor=actor)
             return (f"Published {entry.id}: {entry.title}\nAudience: {entry.audience}\n"
                     f"Effective: {entry.effective_at}\nExpires: {entry.expires_at or 'none'}")
+        if command == "audience" and len(parts) == 4:
+            return preview(library.set_audience(parts[2], parts[3], actor=actor))
         if command == "retire" and len(parts) == 3:
             library.retire(parts[2], actor=actor)
             return f"Retired {parts[2]}. This entry will no longer support answers or document downloads."

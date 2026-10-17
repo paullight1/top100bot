@@ -158,7 +158,7 @@ from unipod_bot.config import Settings
 
 @pytest.mark.anyio
 async def test_handle_user_dm_serves_pdf():
-    settings = Settings(
+    settings = Settings(knowledge_library_enabled=False,
         whatsapp_session_path=Path("data/session.db"),
         test_group_jid="120363test@g.us",
         debug=False,

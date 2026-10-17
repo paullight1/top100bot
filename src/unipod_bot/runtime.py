@@ -31,6 +31,7 @@ from unipod_bot.health import HealthChecker
 from unipod_bot.incoming import IncomingAdminDm, IncomingGroupMessage, IncomingUserDm, IncomingKnowledgeMessage
 from unipod_bot.knowledge import KnowledgeLibrary, MAX_PDF_BYTES
 from unipod_bot.knowledge_commands import handle_knowledge_command
+from unipod_bot.knowledge_answers import grounded_answer
 from unipod_bot.ingest import (
     parse_iso_time,
     pdf_episode_body,
@@ -105,7 +106,7 @@ BOT_IDENTITY_FACTS: tuple[str, ...] = (
     "Skills - Voice: Generates audio voice notes via the voice skill when requested with /voice anywhere in the message.",
     "Skills - Documents: Ingests shared PDFs and can share community documents on request via the document skill (e.g. 'send me the hackathon guide').",
     "Skills - Multilingual: Understands questions in English, Swahili, French, and other languages.",
-    "Reliability: The bot never guesses or hallucinates. If it does not have a grounded answer, it stays silent in public groups and forwards the question to the admin team.",
+    "Reliability: With the approved knowledge library enabled, factual answers use checked source excerpts. Unsupported answers are withheld and questions are forwarded to admins. Source accuracy and relevance still require human review.",
     "Administration: The bot is maintained by the Top100 Africa Future Leaders team.",
 )
 
@@ -238,6 +239,8 @@ class Runtime:
         self.knowledge = (KnowledgeLibrary(settings.knowledge_db_path or
             settings.whatsapp_session_path.parent / "knowledge.sqlite3")
             if settings.knowledge_library_enabled else None)
+        if self.knowledge is not None:
+            logger.info("event=knowledge_ready mode=approved_excerpts feed_enabled=%s", bool(settings.knowledge_group_jid))
         self.inbox = AdminInbox(settings)
         self.stub_known = bool(settings.groq_enabled)
         self.ingest_count = 0
@@ -696,6 +699,9 @@ class Runtime:
             return
         if self.knowledge is not None:
             self.inbox.remember(msg.chat_obj, msg.chat_jid, msg.sender_jid)
+            if self._is_pdf_request(msg.text) and not msg.has_document:
+                await self._handle_library_pdf_request(msg)
+                return
             is_knowledge = bool(re.match(r"^knowledge(?:\s|$)", msg.text.strip(), re.I))
             legacy = re.match(r"^(?:/?ingest:?|learn)\s+(.+)", msg.text.strip(), re.I | re.S)
             if is_knowledge or legacy or msg.has_document:
@@ -867,6 +873,9 @@ class Runtime:
     async def _admin_groq_reply(self, question: str, is_voice: bool = False) -> str:
         if self.groq is None:
             return "GROQ_API_KEY is not set. Send recent, status, or ping."
+        if self.knowledge is not None:
+            return (await self._library_answer(question, "", allow_admin=True)
+                    or "No current approved source supports an answer. Use knowledge help to add or review knowledge.")
         history = self.recent.format_lines(30)
         graphiti_facts, activity_facts = await self._retrieve_answer_context(
             question, history
@@ -947,6 +956,9 @@ class Runtime:
         # Check for PDF send requests (user asking for a document)
         if self._is_pdf_request(msg.text):
             await self._handle_pdf_request(msg)
+            if self.knowledge is not None:
+                self._buffer_for_ingest(msg)
+                return
 
         # Check for meeting link and schedule reminders
         if msg.text:
@@ -1108,6 +1120,9 @@ class Runtime:
         Stricter than regular replies: requires ≥ retrieval_min_correction_facts
         and backs off if the user has been corrected recently on this topic.
         """
+        if self.knowledge is not None:
+            # Conversation graph claims cannot establish official contradictions.
+            return None
         if self.groq is None:
             return None
         # Short-circuit: pool is paused until daily reset
@@ -1230,6 +1245,27 @@ class Runtime:
             return True
         return self.store.is_grounded(facts)
 
+    async def _library_answer(self, question: str, context: str, *, allow_admin: bool = False) -> str | None:
+        if self.groq is None or self._is_groq_paused():
+            return None
+        activities = []
+        if is_activity_question(question, context):
+            try:
+                records = await self.top100_activities.fetch_relevant(question, context)
+                activities = [(a.title, self._format_top100_activity(a), a.activity_url) for a in records]
+            except Exception as exc:
+                logger.warning("event=top100_api_unavailable error=%s", type(exc).__name__)
+        if _is_bot_self_query(question):
+            activities.append(("AFL bot capabilities", "\n".join(BOT_IDENTITY_FACTS), ""))
+        try:
+            return await grounded_answer(self.groq, self.knowledge, question=question,
+                context=context, activities=activities, allow_admin=allow_admin)
+        except GroqKeyPoolExhausted as exc:
+            await self._handle_groq_exhausted(exc)
+        except Exception as exc:
+            logger.warning("event=knowledge_answer_withheld error=%s", type(exc).__name__)
+        return None
+
     async def _generate_known_reply(
         self,
         *,
@@ -1246,6 +1282,11 @@ class Runtime:
         non_admin_facts contains facts from non-admin sources that were used,
         so the caller can forward them to admin for verification.
         """
+        if self.knowledge is not None:
+            context = self.recent.format_chat(chat_jid)
+            if quoted_text:
+                context += "\nQuoted message for reference: " + quoted_text
+            return await self._library_answer(text, context), []
         if self.groq is None:
             return (STUB_GROUP_REPLY if allow_stub else None), []
         # Short-circuit: pool is paused until daily reset
@@ -1372,7 +1413,7 @@ class Runtime:
         )
         # Check for PDF requests in DM
         if self._is_pdf_request(msg.text):
-            if self._pdf_store:
+            if self._pdf_store or self.knowledge is not None:
                 await self._handle_pdf_request(msg)
                 return
 
@@ -1544,6 +1585,16 @@ class Runtime:
 
     async def _handle_pdf_document(self, msg: IncomingGroupMessage) -> None:
         """Download, extract, and ingest PDF text. Mention existence in group."""
+        if self.knowledge is not None:
+            if is_admin_jid(msg.sender_jid, self.settings):
+                user, _, server = msg.sender_jid.partition("@")
+                private = IncomingAdminDm(chat_jid=msg.chat_jid, sender_jid=msg.sender_jid,
+                    message_id=msg.message_id, text=msg.text, iso_time=msg.iso_time,
+                    chat_obj=build_jid(user, server or "s.whatsapp.net"), event_obj=msg.event_obj,
+                    has_document=True, document_filename=msg.document_filename,
+                    document_mimetype=msg.document_mimetype)
+                await self._handle_knowledge_message(private)
+            return
         if not msg.has_document or not msg.document_filename:
             return
         logger.info(
@@ -1661,6 +1712,8 @@ class Runtime:
         if not text:
             return False
         lower = text.lower().strip()
+        if self.knowledge is not None and re.fullmatch(r"(?:document|pdf)\s+[a-f0-9]{12}", lower):
+            return True
         keywords = (
             "send me the pdf", "send the pdf", "send me the document",
             "send the document", "can i get the pdf", "can i get the document",
@@ -1673,6 +1726,9 @@ class Runtime:
         self, msg: IncomingGroupMessage | IncomingUserDm
     ) -> None:
         """Send a stored PDF if the user requests it (group or DM)."""
+        if self.knowledge is not None:
+            await self._handle_library_pdf_request(msg)
+            return
         if not self._pdf_store:
             return
         # Find the most recent PDF
@@ -1710,6 +1766,29 @@ class Runtime:
                 )
             except Exception:
                 logger.exception("event=pdf_send_failed filename=%s", filename)
+
+    async def _handle_library_pdf_request(self, msg: IncomingGroupMessage | IncomingUserDm | IncomingAdminDm) -> None:
+        allow_admin = isinstance(msg, IncomingAdminDm) and is_admin_jid(msg.sender_jid, self.settings)
+        explicit_ids = re.findall(r"\b[a-f0-9]{12}\b", msg.text.lower())
+        entries = await asyncio.to_thread(self.knowledge.list_entries, limit=5000)
+        candidates = []
+        for entry in entries:
+            if not entry.filename or (explicit_ids and entry.id not in explicit_ids):
+                continue
+            if await asyncio.to_thread(self.knowledge.active, entry.id, allow_admin=allow_admin):
+                candidates.append(entry)
+        if len(candidates) != 1:
+            reply = "No current published document is available for that request."
+            if candidates:
+                reply = "Choose a published document:\n" + "\n".join(
+                    f"{e.title} — document {e.id}" for e in candidates[:10])
+            await self._send_or_reply(msg.chat_obj, reply, msg.event_obj)
+            return
+        document = await asyncio.to_thread(self.knowledge.document, candidates[0].id, allow_admin=allow_admin)
+        if document is not None:
+            data, filename = document
+            await self.client.send_document(msg.chat_obj, data, filename=filename,
+                mimetype="application/pdf", quoted=msg.event_obj)
     async def _handle_reminder_flow(
         self,
         *,

@@ -40,6 +40,7 @@ class FakeGroq:
 
 def _settings(**kwargs) -> Settings:
     defaults = dict(
+        knowledge_library_enabled=False,
         whatsapp_session_path=Path("data/session.db"),
         test_group_jid="120363test@g.us",
         debug=False,

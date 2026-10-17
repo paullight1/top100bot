@@ -13,6 +13,8 @@ Admin DMs accept `knowledge draft <title> | audience=members|admin_only | effect
 
 Admin commands: `knowledge help`, `knowledge list`, `knowledge show <id> [page]`, `knowledge publish <id>`, and `knowledge retire <id>`. Draft creation returns its ID, audience, dates, replacement, provenance, and a content preview. Full content is available through paged show. Explicit publish constitutes approval. Legacy `ingest <text>` and automatic admin ingestion create drafts in library mode, not verified Graphiti facts. Enforce authorization again at the runtime boundary, not in prompts. Ordinary DMs cannot invoke management.
 
+Implementation refinement: `knowledge audience <id> members|admin_only` classifies an existing draft and returns an updated preview. This makes plain feed/PDF submissions usable for members without publishing private defaults accidentally. Published audiences cannot be changed in place.
+
 ## Lifecycle and access
 Draft/published/retired status; immutable content after publication. Save creator, source chat/message/file, timestamps, publisher, and audit events. Replay of the same source chat/message ID is idempotent. A replacement must reference a published predecessor of the same audience. Publishing atomically schedules the predecessor's supersession at the replacement's effective time; publishing concurrent replacement drafts fails. Before that time the old entry remains active. Once superseded, retired, or expired, entries never reappear implicitly. Replacement chains remain viewable for audit.
 

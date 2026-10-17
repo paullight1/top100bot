@@ -1,3 +1,65 @@
+# Curated AFL knowledge library
+
+The default mode now uses **published knowledge and public Top100 activities** for official answers. Ordinary group conversation helps resolve follow-up questions but does not automatically become official knowledge. The older Graphiti reply workflow described later in this file applies only when `KNOWLEDGE_LIBRARY_ENABLED=false`.
+
+## Set up the knowledge feed
+
+Pair WhatsApp yourself, configure your existing `ADMIN_PHONE`/`ADMIN_PHONES` (international digits) or `ADMIN_JIDS`, and retain `TEST_GROUP_JID` for member testing. Add these settings to the **bot service only** if overriding defaults:
+
+```dotenv
+KNOWLEDGE_LIBRARY_ENABLED=true
+KNOWLEDGE_GROUP_JID=
+KNOWLEDGE_DB_PATH=
+```
+
+An empty knowledge-group JID disables the group feed; authorized admin DMs still work. To use a private knowledge group, set its exact `...@g.us` JID. It can be separate from the member test group. Only senders on the bot's configured admin allowlist can contribute, even if WhatsApp grants other people group-admin status. Notify contributors that submissions are retained. Feed text/PDFs are stored as drafts, excluded from member conversation memory, and acknowledged by private DM to the submitting admin.
+
+The blank DB path automatically places `knowledge.sqlite3` beside `WHATSAPP_SESSION_PATH`. In Docker that is `/app/data/knowledge.sqlite3` on the existing `bot_data` volume. This stores entries, PDF attachments and audit history across restarts. Back up the volume; redeployment alone is not a backup.
+
+Drafting, reviewing and publishing require no model key. Answering requires `GROQ_API_KEY`. `OPENAI_API_KEY` is needed for Graphiti conversation memory, but **is not required for the curated library itself**. Both services keep their existing roles; nothing is added to Top100's database.
+
+## Submit and publish
+
+In an authorized admin DM, send a message in this form (replace the example with real, confirmed information):
+
+```text
+knowledge draft Mentoring guide | audience=members | effective=2026-11-01 | expires=2027-01-01
+Mentoring sessions are held on the first Tuesday of each month.
+Contact the programme office for scheduling assistance.
+```
+
+The bot returns an entry ID, metadata and a content preview. Review a long entry using `knowledge show ENTRY_ID 2` for page two and subsequent pages. Then send:
+
+```text
+knowledge publish ENTRY_ID
+```
+
+Plain admin-feed messages and PDFs also create drafts. They default to **admin_only**, and remain invisible to members even after publication. To classify a draft for member-facing answers, review it, send `knowledge audience ENTRY_ID members`, review the updated preview, then publish it. Use `knowledge list` and `knowledge list 2` to find entries, and `knowledge help` for command syntax.
+
+Readable PDFs up to 10 MB are accepted in admin DMs/the configured feed; scanned PDFs need selectable text before submission. There is an 80,000-character content limit. Oversize/unreadable documents are rejected rather than silently truncated. A PDF caption can contain the `knowledge draft Title | audience=members | ...` header. Its original extracted text is retained; the bot does not generate a summary and silently publish that instead.
+
+Legacy `ingest <text>` now creates a private draft. `ingest on` enables automatic drafts of non-question admin statements; `ingest off` disables that convenience. Neither command automatically publishes anything. Publishing is an explicit admin action; review the full content and audience before using it.
+
+## Replace, expire or withdraw
+
+Publish a new draft with `replaces=OLD_ENTRY_ID` to replace an existing published entry. The audience must match. A future effective date leaves the old version active until the scheduled switch. Only one successor can be published against a predecessor. Content cannot be edited after publication; the original remains available for audit. A new PDF version should be resubmitted with a caption specifying `replaces`.
+
+`knowledge retire ENTRY_ID` withdraws an entry immediately. Expiry is automatic at the configured instant. Retired, expired and superseded entries cannot support replies or PDF downloads. Previous versions do not automatically come back when a successor expires/is retired. Dates such as `2026-11-01` mean midnight Lagos; precise ISO timestamps must include a timezone, for example `2026-11-01T09:00:00+01:00`.
+
+## Answer behavior and limits
+
+The bot retrieves only current published member entries for member groups/DMs. Admin-only entries are available in authenticated admin DMs, never in a group even when an admin asks. Public activity records remain read-only and are fetched when relevant, with the existing short API cache.
+
+Groq selects exact excerpts; application code validates source IDs, literal text and sentence/field boundaries, then adds source titles, entry IDs and approved links. It rechecks access/lifecycle after the model call. Fabricated quotes, malformed output, an explicit source conflict, or missing evidence produce no factual reply. Existing silent-group/admin-notification behavior applies. Automatic Graphiti fact corrections are disabled in library mode. `/summary` describes chat history and reminders perform scheduling; these remain separate conversational skills, not official knowledge sources.
+
+Document requests apply the same audience/lifecycle rules. If more than one accessible document exists, the bot offers a bounded list; use `document ENTRY_ID` to request one. It never sends the last unapproved/private PDF from an in-memory pool.
+
+This reduces invented facts; it does not guarantee that an approved document is correct or that model-selected excerpts answer every question correctly. Retrieval uses keyword matches, so wording differences may cause an abstention. The publishing admin must resolve contradictory guides and assign expiry dates to temporary announcements. Keep the member test group restricted while reviewing real answers.
+
+---
+
+# Existing deployment and legacy reference
+
 # Top100 AFL WhatsApp assistant
 
 Headless Python service for Top100 Africa Future Leaders. It connects to

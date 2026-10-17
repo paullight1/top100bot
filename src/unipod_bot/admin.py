@@ -110,7 +110,8 @@ def handle_admin_dm(
     # --- status ---
     if lowered == "status":
         test_group = settings.test_group_jid or "(group processing disabled)"
-        mode = "✅ Known (Groq from Graphiti + chat)" if stub_known else "🔇 Unknown (silent + admin DM)"
+        mode = ("✅ Known (approved library + public activities)" if knowledge_mode
+                else "✅ Known (Groq from Graphiti + chat)") if stub_known else "🔇 Unknown (silent + admin DM)"
         groq = f"✅ On — {settings.groq_model}" if settings.groq_enabled else "❌ Off"
         graphiti = (
             f"✅ On — group={settings.graphiti_group_id}, episodes={graphiti_ingest}"
@@ -126,6 +127,7 @@ def handle_admin_dm(
             f"  Reply group: {test_group}\n"
             f"  Admins: {len(settings.admin_phones)}\n"
             f"  Admin Ingest Mode: {ingest_mode_str}\n"
+            + (f"  Knowledge: enabled; feed={'configured' if settings.knowledge_group_jid else 'disabled'}\n" if knowledge_mode else "") +
             "\n"
             "🔁 *Reply Mode*\n"
             f"  {mode}\n"
@@ -191,6 +193,8 @@ def handle_admin_dm(
     # --- stub known ---
     if lowered in {"stub known", "known"}:
         groq_hint = (
+            "Replies use only published current knowledge and public Top100 activities."
+            if knowledge_mode else
             "Groq will answer in-group from Graphiti facts and recent chat."
             if settings.groq_enabled
             else "⚠️ GROQ_API_KEY unset — placeholder string will be sent."

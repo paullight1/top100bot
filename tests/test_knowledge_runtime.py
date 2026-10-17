@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from unipod_bot.config import Settings, load_settings
-from unipod_bot.incoming import classify_message, SkipReason, IncomingAdminDm
+from unipod_bot.incoming import classify_message, SkipReason, IncomingAdminDm, IncomingUserDm
 from unipod_bot.runtime import Runtime
 
 
@@ -44,9 +44,13 @@ def test_feed_group_config_is_exact_and_default_library_enabled(monkeypatch):
 class Client:
     def __init__(self):
         self.sent = []
+        self.documents = []
 
     async def send_message(self, chat, text, **kw):
         self.sent.append((chat, text))
+
+    async def send_document(self, chat, data, **kw):
+        self.documents.append((chat, data, kw))
 
 
 def test_admin_submission_is_draft_and_feed_does_not_enter_recent_or_graphiti(tmp_path):
@@ -139,4 +143,56 @@ def test_pdf_feed_creates_private_draft_and_rejects_unreadable_attachment(tmp_pa
         await runtime._handle_knowledge_message(replace(job, message_id="bad-pdf"))
         assert len(runtime.knowledge.list_entries()) == 1
         assert "readable" in client.sent[-1][1]
+    asyncio.run(run())
+
+
+def test_pdf_downloads_never_expose_private_or_retired_sources(tmp_path):
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        lib = runtime.knowledge
+        for mid, audience in (("private", "admin_only"), ("public", "members")):
+            entry = lib.create_draft(title="Mentoring guide", content="Mentoring guidance.",
+                actor="admin", source_chat="admin", source_message=mid, audience=audience,
+                attachment=b"%PDF-" + mid.encode(), filename=mid + ".pdf")
+            lib.publish(entry.id, actor="admin")
+            if mid == "private":
+                private_id = entry.id
+            else:
+                public_id = entry.id
+        member = IncomingUserDm(chat_jid="user@s.whatsapp.net", sender_jid="user@s.whatsapp.net",
+            message_id="request", text=f"document {private_id}", iso_time="", chat_obj="user")
+        await runtime._handle_pdf_request(member)
+        assert not runtime.client.documents
+        assert private_id not in runtime.client.sent[-1][1]
+        await runtime._handle_pdf_request(replace(member, text=f"document {public_id}"))
+        assert runtime.client.documents[0][1] == b"%PDF-public"
+        lib.retire(public_id, actor="admin")
+        await runtime._handle_pdf_request(replace(member, text=f"document {public_id}"))
+        assert len(runtime.client.documents) == 1
+        admin = IncomingAdminDm(chat_jid="admin", sender_jid="2348011111111@s.whatsapp.net",
+            message_id="admin-request", text=f"document {private_id}", chat_obj="admin")
+        await runtime._handle_admin_dm(admin)
+        assert runtime.client.documents[-1][1] == b"%PDF-private"
+    asyncio.run(run())
+
+
+def test_published_library_answer_ignores_unapproved_graph_and_recent_claims(tmp_path):
+    import json
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        entry = runtime.knowledge.create_draft(title="Mentoring", content="Mentoring is on Tuesdays.",
+            actor="admin", source_chat="admin", source_message="approved", audience="members")
+        runtime.knowledge.publish(entry.id, actor="admin")
+        runtime.recent.add(iso_time="", group_jid="test@g.us", sender_jid="member", text="Mentoring is on Friday.")
+        class Model:
+            async def chat_completion(self, messages, **kw):
+                payload = json.loads(messages[-1]["content"])
+                source = payload["sources"][0]
+                assert "Friday" not in source["text"]
+                return json.dumps({"answers_question": True, "conflict": False,
+                    "evidence": [{"source": source["id"], "quote": source["text"]}]})
+        runtime.groq = Model()
+        reply, _ = await runtime._generate_known_reply(chat_jid="test@g.us", sender_jid="member",
+            message_id="q", text="When is mentoring?", allow_stub=False)
+        assert "Tuesdays" in reply and "Friday" not in reply
     asyncio.run(run())

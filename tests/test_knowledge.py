@@ -101,3 +101,13 @@ def test_pdf_bytes_are_only_available_when_entry_accessible(tmp_path):
     assert lib.document(entry.id, now=NOW) == (b"%PDF-test", "guide.pdf")
     lib.retire(entry.id, actor="admin", now=NOW)
     assert lib.document(entry.id, now=NOW) is None
+
+
+def test_admin_can_classify_a_draft_but_cannot_reclassify_published_content(tmp_path):
+    lib = KnowledgeLibrary(tmp_path / "kb.db")
+    entry = draft(lib, audience="admin_only")
+    lib.set_audience(entry.id, "members", actor="admin")
+    assert lib.get(entry.id).audience == "members"
+    lib.publish(entry.id, actor="admin", now=NOW)
+    with pytest.raises(ValueError, match="draft"):
+        lib.set_audience(entry.id, "admin_only", actor="admin")

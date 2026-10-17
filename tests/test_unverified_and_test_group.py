@@ -58,6 +58,7 @@ class RetrievingStore:
 
 def _settings(**kwargs) -> Settings:
     defaults = dict(
+        knowledge_library_enabled=False,
         whatsapp_session_path=Path("data/session.db"),
         test_group_jid=None,
         test_group_jids=(),

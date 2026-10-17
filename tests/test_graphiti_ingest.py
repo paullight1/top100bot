@@ -41,6 +41,7 @@ def _settings(**kwargs) -> Settings:
         key = kwargs.pop("groq_api_key")
         kwargs.setdefault("groq_api_keys", (key,) if key else ())
     defaults = dict(
+        knowledge_library_enabled=False,
         whatsapp_session_path=Path("data/session.db"),
         test_group_jid="120363test@g.us",
         debug=False,

@@ -71,6 +71,9 @@ class KnowledgeExcerpt:
         return f"KB-{self.entry.id}-{self.index}"
 
 
+_ENTRY_COLUMNS = ",".join(KnowledgeEntry.__dataclass_fields__)
+
+
 class KnowledgeLibrary:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -112,7 +115,7 @@ class KnowledgeLibrary:
 
     def get(self, entry_id: str) -> KnowledgeEntry:
         with self._db() as db:
-            row = db.execute("SELECT * FROM knowledge WHERE id=?", (entry_id,)).fetchone()
+            row = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE id=?", (entry_id,)).fetchone()
         if row is None:
             raise ValueError("Knowledge entry not found.")
         return self._entry(row)
@@ -142,7 +145,7 @@ class KnowledgeLibrary:
             raise ValueError("Source chat, message ID and submitting admin are required.")
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            prior = db.execute("SELECT * FROM knowledge WHERE source_chat=? AND source_message=?",
+            prior = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE source_chat=? AND source_message=?",
                                (source_chat, source_message)).fetchone()
             if prior:
                 return self._entry(prior)
@@ -161,13 +164,13 @@ class KnowledgeLibrary:
         at = (now or utc_now()).astimezone(timezone.utc).isoformat()
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT * FROM knowledge WHERE id=?", (entry_id,)).fetchone()
+            row = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE id=?", (entry_id,)).fetchone()
             if row is None or row["status"] != "draft":
                 raise ValueError("Only an existing draft can be published.")
             if row["expires_at"] and row["expires_at"] <= at:
                 raise ValueError("This draft has already expired; create a fresh version.")
             if row["replaces"]:
-                old = db.execute("SELECT * FROM knowledge WHERE id=?", (row["replaces"],)).fetchone()
+                old = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE id=?", (row["replaces"],)).fetchone()
                 if old is None or old["status"] != "published" or old["superseded_at"]:
                     raise ValueError("Predecessor is unavailable or already has a replacement.")
                 if old["audience"] != row["audience"]:
@@ -190,6 +193,18 @@ class KnowledgeLibrary:
             db.execute("INSERT INTO knowledge_audit(entry_id,action,actor,at) VALUES (?,'retire',?,?)",
                        (entry_id, actor, at))
 
+    def set_audience(self, entry_id: str, audience: str, *, actor: str) -> KnowledgeEntry:
+        if audience not in {"members", "admin_only"}:
+            raise ValueError("audience must be members or admin_only.")
+        with self._db() as db:
+            updated = db.execute("UPDATE knowledge SET audience=? WHERE id=? AND status='draft'",
+                                 (audience, entry_id)).rowcount
+            if updated != 1:
+                raise ValueError("Only a draft's audience can be changed. Retire or replace published content.")
+            db.execute("INSERT INTO knowledge_audit(entry_id,action,actor,at) VALUES (?,?,?,?)",
+                       (entry_id, f"audience:{audience}", actor, utc_now().isoformat()))
+        return self.get(entry_id)
+
     @staticmethod
     def _accessible(entry: KnowledgeEntry, *, allow_admin: bool, now: datetime) -> bool:
         at = now.astimezone(timezone.utc).isoformat()
@@ -205,7 +220,7 @@ class KnowledgeLibrary:
 
     def list_entries(self, *, limit: int = 50, offset: int = 0) -> list[KnowledgeEntry]:
         with self._db() as db:
-            rows = db.execute("SELECT * FROM knowledge ORDER BY created_at DESC,id LIMIT ? OFFSET ?",
+            rows = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge ORDER BY created_at DESC,id LIMIT ? OFFSET ?",
                               (min(max(limit, 1), 5000), max(offset, 0))).fetchall()
         return [self._entry(row) for row in rows]
 
@@ -221,7 +236,7 @@ class KnowledgeLibrary:
         at = now or utc_now()
         matches: list[tuple[int, KnowledgeExcerpt]] = []
         with self._db() as db:
-            rows = db.execute("SELECT * FROM knowledge WHERE status='published'").fetchall()
+            rows = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE status='published'").fetchall()
         for row in rows:
             entry = self._entry(row)
             if not self._accessible(entry, allow_admin=allow_admin, now=at):
@@ -240,12 +255,12 @@ class KnowledgeLibrary:
     def document(self, entry_id: str, *, allow_admin: bool = False,
                  now: datetime | None = None) -> tuple[bytes, str] | None:
         with self._db() as db:
-            row = db.execute("SELECT * FROM knowledge WHERE id=?", (entry_id,)).fetchone()
-        if not row or not row["attachment"]:
+            row = db.execute(f"SELECT {_ENTRY_COLUMNS} FROM knowledge WHERE id=?", (entry_id,)).fetchone()
+        if not row or not self._accessible(self._entry(row), allow_admin=allow_admin, now=now or utc_now()):
             return None
-        if not self._accessible(self._entry(row), allow_admin=allow_admin, now=now or utc_now()):
-            return None
-        return bytes(row["attachment"]), row["filename"]
+        with self._db() as db:
+            blob = db.execute("SELECT attachment,filename FROM knowledge WHERE id=?", (entry_id,)).fetchone()
+        return (bytes(blob["attachment"]), blob["filename"]) if blob and blob["attachment"] else None
 
     def audit(self, entry_id: str) -> list[dict]:
         with self._db() as db:
