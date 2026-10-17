@@ -38,6 +38,13 @@ services:
       WHATSAPP_SESSION_PATH: /app/data/session.db
       TTS_CACHE_DIR: /app/data/tts_cache
       FALKORDB_HOST: falkordb
+    # Authenticated admin API is reachable only on the existing private Docker
+    # network. No admin API host port is published.
+    networks:
+      default:
+      admin_bridge:
+        aliases:
+          - top100-afl-bot-admin
     volumes:
       - bot_data:/app/data
     depends_on:
@@ -54,3 +61,8 @@ services:
 volumes:
   falkordb_data:
   bot_data:
+
+networks:
+  admin_bridge:
+    external: true
+    name: dokploy-network
