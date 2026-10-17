@@ -28,7 +28,9 @@ from unipod_bot.groq_client import (
 )
 from unipod_bot.groq_pool import GroqKeyPool, GroqKeyPoolExhausted
 from unipod_bot.health import HealthChecker
-from unipod_bot.incoming import IncomingAdminDm, IncomingGroupMessage, IncomingUserDm
+from unipod_bot.incoming import IncomingAdminDm, IncomingGroupMessage, IncomingUserDm, IncomingKnowledgeMessage
+from unipod_bot.knowledge import KnowledgeLibrary, MAX_PDF_BYTES
+from unipod_bot.knowledge_commands import handle_knowledge_command
 from unipod_bot.ingest import (
     parse_iso_time,
     pdf_episode_body,
@@ -139,7 +141,7 @@ def _is_bot_self_query(text: str) -> bool:
         return True
     return False
 
-Job = IncomingGroupMessage | IncomingAdminDm | IncomingUserDm
+Job = IncomingGroupMessage | IncomingAdminDm | IncomingUserDm | IncomingKnowledgeMessage
 IngestJob = tuple[str, IncomingGroupMessage | None, str | None, list | None]
 
 
@@ -233,6 +235,9 @@ class Runtime:
             self.own_users.add(f"{settings.bot_phone}@s.whatsapp.net")
         self.recent = RecentGroupLog(settings.short_term_max_messages)
         self.top100_activities = Top100ActivitiesClient(settings.top100_api_base_url)
+        self.knowledge = (KnowledgeLibrary(settings.knowledge_db_path or
+            settings.whatsapp_session_path.parent / "knowledge.sqlite3")
+            if settings.knowledge_library_enabled else None)
         self.inbox = AdminInbox(settings)
         self.stub_known = bool(settings.groq_enabled)
         self.ingest_count = 0
@@ -635,7 +640,9 @@ class Runtime:
         while True:
             job = await self.queue.get()
             try:
-                if isinstance(job, IncomingAdminDm):
+                if isinstance(job, IncomingKnowledgeMessage):
+                    await self._handle_knowledge_message(job)
+                elif isinstance(job, IncomingAdminDm):
                     await self._handle_admin_dm(job)
                 elif isinstance(job, IncomingUserDm):
                     await self._handle_user_dm(job)
@@ -685,12 +692,27 @@ class Runtime:
                 self.ingest_queue.task_done()
 
     async def _handle_admin_dm(self, msg: IncomingAdminDm) -> None:
+        if not is_admin_jid(msg.sender_jid, self.settings):
+            return
+        if self.knowledge is not None:
+            self.inbox.remember(msg.chat_obj, msg.chat_jid, msg.sender_jid)
+            is_knowledge = bool(re.match(r"^knowledge(?:\s|$)", msg.text.strip(), re.I))
+            legacy = re.match(r"^(?:/?ingest:?|learn)\s+(.+)", msg.text.strip(), re.I | re.S)
+            if is_knowledge or legacy or msg.has_document:
+                if legacy and legacy.group(1).strip().lower() in {"on", "off", "mode on", "mode off"}:
+                    self.admin_ingest_mode = legacy.group(1).strip().lower().endswith("on")
+                    await self._send_or_reply(msg.chat_obj,
+                        "Admin automatic drafts " + ("enabled." if self.admin_ingest_mode else "disabled.")
+                        + " Every draft still requires knowledge publish ENTRY_ID.", msg.event_obj)
+                else:
+                    await self._handle_knowledge_message(msg, legacy_text=legacy.group(1) if legacy else None)
+                return
         logger.info(
             "event=admin_dm sender=%s chat=%s id=%s text=%s",
             msg.sender_jid,
             msg.chat_jid,
             msg.message_id,
-            msg.text,
+            "(private library input)" if self.knowledge is not None else msg.text,
         )
         self.inbox.remember(msg.chat_obj, msg.chat_jid, msg.sender_jid)
         result = handle_admin_dm(
@@ -703,6 +725,7 @@ class Runtime:
             graphiti_ready=self.store is not None,
             graphiti_ingest=self.graphiti_ingest_count,
             admin_ingest_enabled=self.admin_ingest_mode,
+            knowledge_mode=self.knowledge is not None,
         )
         if result.stub_known is not None:
             self.stub_known = result.stub_known
@@ -727,6 +750,9 @@ class Runtime:
                 reply = self._admin_errors_reply(result.run_errors)
             elif result.use_groq:
                 if self.admin_ingest_mode and not looks_like_question(msg.text) and not is_voice:
+                    if self.knowledge is not None:
+                        await self._handle_knowledge_message(msg)
+                        return
                     await self._ingest_admin_fact(msg, msg.text)
                     reply = (
                         f"✅ *Ingested into Knowledge Graph*\n\n"
@@ -747,6 +773,54 @@ class Runtime:
                 logger.info("event=admin_dm_replied chat=%s", msg.chat_jid)
             except Exception:
                 logger.exception("event=admin_dm_reply_failed chat=%s", msg.chat_jid)
+
+    async def _handle_knowledge_message(
+        self, msg: IncomingKnowledgeMessage | IncomingAdminDm, *, legacy_text: str | None = None
+    ) -> None:
+        """Feed content bypasses all conversation logs, summaries and Graphiti."""
+        if self.knowledge is None or not is_admin_jid(msg.sender_jid, self.settings):
+            return
+        is_feed = isinstance(msg, IncomingKnowledgeMessage)
+        if is_feed and msg.chat_jid.lower() != self.settings.knowledge_group_jid:
+            return
+        target = msg.chat_obj
+        quoted = msg.event_obj
+        if is_feed:
+            user, _, server = msg.sender_jid.partition("@")
+            target, quoted = build_jid(user, server or "s.whatsapp.net"), None
+        try:
+            content = legacy_text if legacy_text is not None else msg.text.strip()
+            attachment, filename = None, None
+            if msg.has_document:
+                if msg.document_mimetype != "application/pdf" or not self.settings.pdf_ingestion_enabled:
+                    raise ValueError("Only readable PDFs are supported, and PDF ingestion must be enabled.")
+                attachment = await self.client.download_any(getattr(msg.event_obj, "Message", None))
+                if not attachment or len(attachment) > MAX_PDF_BYTES:
+                    raise ValueError("PDF is empty or exceeds the 10 MB limit.")
+                filename = Path(msg.document_filename or "guide.pdf").name
+                extraction = await asyncio.to_thread(extract_pdf_text, attachment, filename)
+                if extraction is None:
+                    raise ValueError("No readable PDF text. Please provide a PDF with selectable text.")
+                if re.match(r"^knowledge draft(?:\s|$)", content, re.I):
+                    content = content.split("\n", 1)[0] + "\n" + extraction.text
+                else:
+                    content = f"knowledge draft {filename.replace('|', ' ')}\n{extraction.text}"
+            elif not re.match(r"^knowledge(?:\s|$)", content, re.I):
+                if not content:
+                    return
+                title = content.splitlines()[0][:100].replace("|", " ")
+                content = f"knowledge draft {title}\n{content}"
+            reply = await asyncio.to_thread(handle_knowledge_command, self.knowledge, content,
+                actor=msg.sender_jid, source_chat=msg.chat_jid, source_message=msg.message_id,
+                attachment=attachment, filename=filename)
+            logger.info("event=knowledge_command_ok source_message=%s", msg.message_id)
+        except ValueError as exc:
+            reply = f"Knowledge update rejected: {exc}"
+        except Exception as exc:
+            # Avoid logging submitted content, document data, or credentials.
+            logger.warning("event=knowledge_command_failed error=%s", type(exc).__name__)
+            reply = "Knowledge update failed. It was not published. Check storage and retry."
+        await self._send_or_reply(target, reply, quoted)
 
     async def _ingest_admin_fact(self, msg: IncomingAdminDm, text: str) -> None:
         """Ingest a fact directly from an admin chat as a verified admin episode."""

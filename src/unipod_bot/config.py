@@ -237,8 +237,18 @@ class Settings:
     piper_tts_voice: str = "en_US-lessac-medium"
     tts_timeout_seconds: float = 30.0
     helpers: tuple[TopicHelper, ...] = ()
+    knowledge_library_enabled: bool = True
+    knowledge_group_jid: str | None = None
+    knowledge_db_path: Path | None = None
 
     def __post_init__(self) -> None:
+        if self.knowledge_group_jid:
+            group = self.knowledge_group_jid.strip().lower()
+            if not re.fullmatch(r"[\w-]+@g\.us", group):
+                raise ValueError("KNOWLEDGE_GROUP_JID must be one exact WhatsApp group JID.")
+            if not self.knowledge_library_enabled:
+                raise ValueError("The knowledge group requires KNOWLEDGE_LIBRARY_ENABLED=true.")
+            object.__setattr__(self, "knowledge_group_jid", group)
         if not self.test_group_jids and self.test_group_jid:
             parsed = parse_group_jids(self.test_group_jid)
             object.__setattr__(self, "test_group_jids", parsed)
@@ -344,6 +354,9 @@ def load_settings(*, dotenv: bool = True) -> Settings:
             or "https://www.top100afl.com"
         ),
         admin_jids=admin_jids,
+        knowledge_library_enabled=parse_bool(os.getenv("KNOWLEDGE_LIBRARY_ENABLED"), default=True),
+        knowledge_group_jid=_optional_str("KNOWLEDGE_GROUP_JID"),
+        knowledge_db_path=Path(os.environ["KNOWLEDGE_DB_PATH"]) if _optional_str("KNOWLEDGE_DB_PATH") else None,
         test_group_jids=group_jids,
         bot_phone=_optional_str("BOT_PHONE"),
         groq_api_keys=parse_groq_keys(os.getenv("GROQ_API_KEY")),

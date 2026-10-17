@@ -8,7 +8,7 @@ from typing import Any
 
 from neonize.utils.message import extract_text
 
-from unipod_bot.admin import event_looks_like_admin
+from unipod_bot.admin import event_looks_like_admin, is_admin_jid
 from unipod_bot.config import Settings, parse_group_jids
 from unipod_bot.jids import is_group_jid, jid_str, jid_user
 
@@ -51,6 +51,14 @@ class IncomingAdminDm:
     event_obj: Any = None
     is_voice_request: bool = False
     push_name: str = ""
+    has_document: bool = False
+    document_filename: str = ""
+    document_mimetype: str = ""
+
+
+@dataclass(frozen=True)
+class IncomingKnowledgeMessage(IncomingGroupMessage):
+    """Authorized feed submission; never a member conversation message."""
 
 
 @dataclass(frozen=True)
@@ -267,6 +275,17 @@ def classify_message(
     push_name = _push_name(event)
     if is_group_jid(chat):
         chat_str = jid_str(chat)
+        if settings.knowledge_group_jid and chat_str.lower() == settings.knowledge_group_jid:
+            # Check the sender, never the group's identity or an LLM claim.
+            sender = jid_str(_sender_jid(event))
+            if not is_admin_jid(sender, settings):
+                return SkipReason.GROUP_NOT_ALLOWED
+            has_doc, filename, mimetype = extract_document_info(payload)
+            return IncomingKnowledgeMessage(
+                chat_jid=chat_str, sender_jid=sender, message_id=_message_id(event),
+                text=text, is_reply_group=False, iso_time=iso_time, chat_obj=chat,
+                event_obj=event, has_document=has_doc, document_filename=filename,
+                document_mimetype=mimetype, push_name=push_name)
         if not is_reply_group(chat_str, settings):
             return SkipReason.GROUP_NOT_ALLOWED
         # Detect and strip /voice prefix before any further processing
@@ -294,7 +313,8 @@ def classify_message(
             push_name=push_name,
         )
     if event_looks_like_admin(event, settings):
-        if not text:
+        has_doc, filename, mimetype = extract_document_info(payload)
+        if not text and not (has_doc and mimetype == "application/pdf"):
             return SkipReason.EMPTY_DM
         text, is_voice = _strip_voice_prefix(text)
         return IncomingAdminDm(
@@ -307,6 +327,7 @@ def classify_message(
             event_obj=event,
             is_voice_request=is_voice,
             push_name=push_name,
+            has_document=has_doc, document_filename=filename, document_mimetype=mimetype,
         )
     if not text:
         return SkipReason.EMPTY_DM

@@ -79,6 +79,7 @@ def handle_admin_dm(
     graphiti_ready: bool = False,
     graphiti_ingest: int = 0,
     admin_ingest_enabled: bool = True,
+    knowledge_mode: bool = False,
 ) -> AdminCommandResult:
     lowered = text.strip().lower()
 
@@ -101,6 +102,7 @@ def handle_admin_dm(
             "• *unknown* — Switch to silent + admin-notify mode\n"
             "• *ingest [on|off|<text>]* — Toggle ingest mode or ingest facts\n"
             "• *help* — This message\n"
+            + ("• *knowledge help* — Draft, review, publish and retire approved knowledge\n" if knowledge_mode else "") +
             "\n"
             "_Any other text is answered via Groq or ingested into the knowledge graph._"
         )
@@ -223,7 +225,7 @@ def handle_admin_dm(
         )
 
     # --- fallback: Groq or help ---
-    return AdminCommandResult("", use_groq=True) if settings.groq_enabled else AdminCommandResult(
+    return AdminCommandResult("", use_groq=True) if settings.groq_enabled or knowledge_mode else AdminCommandResult(
         "📖 *Available Commands*\n"
         "\n"
         "ping · status · health · errors · recent · help\n"
