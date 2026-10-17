@@ -93,7 +93,7 @@ This document covers local setup, **Dokploy deployment**, and direct Docker oper
 
 | Layer | Choice |
 | ----- | ------ |
-| WhatsApp | `neonize==0.4.3.post0` |
+| WhatsApp | `neonize==0.5.2` |
 | LLM | Groq `openai/gpt-oss-120b` (same model as `gpt-oss-120b`) |
 | Memory | `graphiti-core[falkordb]==0.30.2` + FalkorDB |
 | Python | 3.11 via **uv** |
@@ -538,6 +538,8 @@ PDF ingest is **not** in v1.
 | Symptom | Action |
 | ------- | ------ |
 | QR every start | Session path not persisted; check volume / `data/session.db` |
+| Business app says “Check your connection” after QR | Use the pinned Neonize 0.5.2 or newer tested release. Its WhatsMeow core handles `companion_reg_refresh`, which the previous 0.4.3.post0 pin ignored. Pairing still needs a live scan to confirm success. |
+| Logs say `Login event: timeout` while the container stays running | The displayed QR is expired. Restart the bot container to begin another pairing window; keep the persistent session volume. |
 | No group logs | Bot not in the group; or you are logging DMs (`DEBUG` skip `from_me` / `empty_dm`) |
 | FFmpeg error | Install FFmpeg locally or rebuild the image |
 | `uv sync` protobuf error | Known neonize vs graphiti-core conflict — keep both packages; do not drop either |

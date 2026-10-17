@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from importlib.metadata import version
 
 from neonize.aioze.client import NewAClient
 from neonize.aioze.events import ConnectedEv, MessageEv, PairStatusEv
@@ -66,6 +67,7 @@ def log_startup(settings: Settings) -> None:
     session_path = settings.whatsapp_session_path
     session_path.parent.mkdir(parents=True, exist_ok=True)
     logger.info("event=startup session=%s", session_path.resolve())
+    logger.info("event=whatsapp_client library=neonize version=%s", version("neonize"))
     logger.info(
         "event=config debug=%s log_level=%s test_group=%s admin_count=%s groq=%s graphiti=%s",
         settings.debug,
