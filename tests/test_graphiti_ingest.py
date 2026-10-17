@@ -244,7 +244,7 @@ def test_group_reply_uses_graphiti_facts_after_empty_recent():
 def test_retrieval_miss_with_prior_chat_attempts_groq():
     """When Graphiti has no facts but recent chat provides context,
     the bot now tries Groq (per AGENTS.md: short-term context is valid grounding).
-    If Groq returns UNKNOWN, admin is still notified."""
+    If Groq returns UNKNOWN, no unsolicited admin notification is sent."""
     client = FakeClient()
     groq = FakeGroq("UNKNOWN")  # Groq sees context but can't answer
     runtime = Runtime(_settings(groq_api_key="gsk_test"), client, groq=groq)
@@ -260,9 +260,9 @@ def test_retrieval_miss_with_prior_chat_attempts_groq():
     asyncio.run(run())
     # Groq IS called because short-term context exists
     assert len(groq.prompts) == 1
-    # But UNKNOWN response → admin notified, no group reply
-    assert runtime.notify_count == 1
-    assert "Unanswered Question" in client.sent[0][1]
+    # Legacy unknown replies remain quiet without unsolicited admin alerts.
+    assert runtime.notify_count == 0
+    assert client.sent == []
 
 
 def test_retrieval_miss_stays_silent_when_recent_is_only_the_question():
@@ -277,8 +277,8 @@ def test_retrieval_miss_stays_silent_when_recent_is_only_the_question():
 
     asyncio.run(run())
     assert groq.prompts == []
-    assert runtime.notify_count == 1
-    assert "Unanswered Question" in client.sent[0][1]
+    assert runtime.notify_count == 0
+    assert client.sent == []
 
 
 def test_follow_up_search_includes_recent_chat():
@@ -353,7 +353,7 @@ def test_user_dm_grounded_reply_is_not_ingested():
     assert "When is hackathon" not in runtime.recent.format_lines(10)
 
 
-def test_user_dm_retrieval_miss_notifies_admin_silently():
+def test_user_dm_retrieval_miss_does_not_notify_admin_without_request():
     client = FakeClient()
     groq = FakeGroq("should not be called")
     runtime = Runtime(_settings(groq_api_key="gsk_test"), client, groq=groq)
@@ -373,7 +373,5 @@ def test_user_dm_retrieval_miss_notifies_admin_silently():
 
     asyncio.run(run())
     assert groq.prompts == []
-    assert runtime.notify_count == 1
-    assert client.sent[0][0] != chat
-    assert "Direct message" in client.sent[0][1]
-    assert "When is lunch" in client.sent[0][1]
+    assert runtime.notify_count == 0
+    assert client.sent == []

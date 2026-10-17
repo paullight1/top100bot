@@ -95,7 +95,7 @@ def test_admin_recent_and_stub_commands():
     assert "Graphiti" in status.reply and "Off" in status.reply
 
 
-def test_question_in_reply_group_notifies_admin():
+def test_question_in_reply_group_does_not_notify_admin_without_request():
     client = FakeClient()
     runtime = Runtime(_settings(), client)
 
@@ -103,11 +103,8 @@ def test_question_in_reply_group_notifies_admin():
         await runtime._handle_group(_group())
 
     asyncio.run(run())
-    assert runtime.notify_count == 1
-    assert len(client.sent) == 1
-    body = client.sent[0][1]
-    assert "when is the hackathon?" in body
-    assert "Unanswered Question" in body
+    assert runtime.notify_count == 0
+    assert client.sent == []
 
 
 def test_banter_and_other_group_do_not_notify():

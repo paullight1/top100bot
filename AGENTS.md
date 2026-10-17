@@ -1,5 +1,21 @@
 # Agents.md — Top100 AFL WhatsApp Community Bot
 
+## Conversational replies (user-approved override, 2026-10-17)
+
+The user requested smarter replies and fewer notifications. This supersedes older
+silent-unknown/automatic-question-forwarding rules below. In the default knowledge
+mode, respond to direct greetings, thanks, test messages and capability questions;
+resolve short follow-ups using same-chat context; ask for clarification when no
+approved evidence answers the request. Ordinary group banter and messages directed
+to other members remain quiet. Factual answers still require validated excerpts
+from accessible published knowledge/current public activities; conversation and
+model rewrites are reference data only. Never promote chat claims to official facts.
+Forward member questions only when they explicitly request a human/admin; throttle
+repeated requests from the same sender/chat for 30 minutes, and acknowledge a
+handoff only when sending succeeds. Operational alerts and daily reports retain
+their existing paths. Do not log message bodies. No backend/schema/service changes.
+
+
 ## Curated knowledge mode (default; approved 2026-10-17)
 
 `KNOWLEDGE_LIBRARY_ENABLED=true` supersedes legacy rules below that treat ordinary Graphiti/group/admin messages as verified official knowledge. Keep Graphiti/FalkorDB as conversational memory. The SQLite knowledge catalog alongside the session file owns authoritative content, lifecycle and audience; it does not replace the graph store.

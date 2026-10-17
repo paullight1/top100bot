@@ -1,3 +1,24 @@
+# Conversational replies and quieter admin notifications
+
+The bot now answers direct greetings, thanks, test messages and capability questions
+without requiring a source lookup. Mention it, reply to it, or address it as “AFL
+bot” in the configured test group. Plain group banter and questions addressed to
+someone else stay quiet. Short follow-ups such as “and the registration link” use
+the same chat to resolve the topic.
+
+Official facts still come only from currently accessible published knowledge or
+current public Top100 activities. The model may resolve references and typos; it
+cannot write an unsupported official answer. When evidence is missing, the bot asks
+for an activity name, official link or clarification rather than silently stopping.
+
+Routine unanswered questions no longer send admin DMs. Members can explicitly ask
+“please connect me to an admin”; the bot forwards that request and acknowledges it
+only when sending succeeds. Repeated requests by the same person in the same chat
+are limited to one forwarding per 30 minutes per process (reset on restart).
+Critical service alerts and the existing daily report still operate. No new
+environment variables are needed. This section supersedes legacy unknown/silent
+forwarding descriptions later in this file.
+
 # Curated AFL knowledge library
 
 The default mode now uses **published knowledge and public Top100 activities** for official answers. Ordinary group conversation helps resolve follow-up questions but does not automatically become official knowledge. The older Graphiti reply workflow described later in this file applies only when `KNOWLEDGE_LIBRARY_ENABLED=false`.

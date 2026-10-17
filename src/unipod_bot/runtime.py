@@ -15,6 +15,10 @@ from neonize.utils.jid import build_jid
 
 from unipod_bot.admin import handle_admin_dm, is_admin_jid
 from unipod_bot.config import Settings, format_feedback_contacts_str, format_helpers_str
+from unipod_bot.conversation import (
+    UNVERIFIED, UNAVAILABLE, addressed_to_bot, plan_conversation,
+    planned_social_reply, requests_human, simple_reply,
+)
 from unipod_bot.daily_report import DailyReporter
 from unipod_bot.error_tracker import ErrorTracker, ErrorTrackingHandler, Severity
 from unipod_bot.fact_check import is_no_correction
@@ -106,7 +110,7 @@ BOT_IDENTITY_FACTS: tuple[str, ...] = (
     "Skills - Voice: Generates audio voice notes via the voice skill when requested with /voice anywhere in the message.",
     "Skills - Documents: Ingests shared PDFs and can share community documents on request via the document skill (e.g. 'send me the hackathon guide').",
     "Skills - Multilingual: Understands questions in English, Swahili, French, and other languages.",
-    "Reliability: With the approved knowledge library enabled, factual answers use checked source excerpts. Unsupported answers are withheld and questions are forwarded to admins. Source accuracy and relevance still require human review.",
+    "Reliability: With the approved knowledge library enabled, factual answers use checked source excerpts. Unsupported details get a clarification question; admin forwarding requires an explicit human-help request. Source accuracy and relevance still require human review.",
     "Administration: The bot is maintained by the Top100 Africa Future Leaders team.",
 )
 
@@ -245,6 +249,8 @@ class Runtime:
         self.stub_known = bool(settings.groq_enabled)
         self.ingest_count = 0
         self.notify_count = 0
+        self._human_help_notified: dict[tuple[str, str], float] = {}
+        logger.info("event=reply_policy mode=conversational explicit_handoff_only=True")
         self.graphiti_ingest_count = 0
         self.store: GraphitiStore | None = None
         self.roster = RosterStore()
@@ -700,6 +706,11 @@ class Runtime:
     async def _handle_admin_dm(self, msg: IncomingAdminDm) -> None:
         if not is_admin_jid(msg.sender_jid, self.settings):
             return
+        social = simple_reply(msg.text) if msg.text.strip().lower() not in {"help", "ping"} else None
+        if social and not msg.has_document:
+            await self._send_or_reply(msg.chat_obj, social, msg.event_obj)
+            logger.info("event=conversation_replied kind=social scope=admin_dm")
+            return
         if self.knowledge is not None:
             self.inbox.remember(msg.chat_obj, msg.chat_jid, msg.sender_jid)
             if self._is_pdf_request(msg.text) and not msg.has_document:
@@ -929,7 +940,6 @@ class Runtime:
                     "Please submit knowledge text/PDFs in this private DM or the configured knowledge feed. "
                     "The member-group submission was not added to bot memory.")
             return
-        display = msg.text or "(non-text)"
         self.ingest_count += 1
         self.daily_reporter.increment("messages_ingested")
         self.daily_reporter.increment_group(msg.chat_jid)
@@ -954,7 +964,7 @@ class Runtime:
             msg.chat_jid,
             msg.sender_jid,
             msg.message_id,
-            display,
+            "[redacted]",
         )
 
         # PDF document handling — ingest text in background task to avoid blocking worker
@@ -1012,6 +1022,23 @@ class Runtime:
             self._buffer_for_ingest(msg)
             return
         trigger = group_message_trigger(msg, self.own_users)
+        if trigger is None and (msg.mentioned_users or re.search(r"@\d+", msg.text)):
+            self._buffer_for_ingest(msg)
+            return
+        directed = trigger == "mention" or (addressed_to_bot(msg.text)
+            and not msg.mentioned_users and not re.search(r"@\d+", msg.text))
+        if await self._handle_human_help(msg):
+            self._buffer_for_ingest(msg)
+            return
+        social = simple_reply(msg.text) if directed else None
+        if social:
+            await self._send_or_reply(msg.chat_obj, social, msg.event_obj)
+            self.recent.add_bot_reply(msg.chat_jid, social, private=False)
+            logger.info("event=conversation_replied kind=social scope=group")
+            self._buffer_for_ingest(msg)
+            return
+        if directed and trigger is None:
+            trigger = "mention"
         if trigger is None:
             self._buffer_for_ingest(msg)
             logger.debug("event=ingest_only group=%s id=%s", msg.chat_jid, msg.message_id)
@@ -1022,7 +1049,7 @@ class Runtime:
                 await self._check_statement(msg)
             self._buffer_for_ingest(msg)
             return
-        if self.stub_known:
+        if self.stub_known or self.knowledge is not None:
             await self._known_reply(msg, trigger)
         else:
             await self._notify_admins(msg, trigger)
@@ -1258,25 +1285,40 @@ class Runtime:
         return self.store.is_grounded(facts)
 
     async def _library_answer(self, question: str, context: str, *, allow_admin: bool = False) -> str | None:
+        social = simple_reply(question)
+        if social:
+            return social
         if self.groq is None or self._is_groq_paused():
-            return None
-        activities = []
-        if is_activity_question(question, context):
-            try:
-                records = await self.top100_activities.fetch_relevant(question, context)
-                activities = [(a.title, self._format_top100_activity(a), a.activity_url) for a in records]
-            except Exception as exc:
-                logger.warning("event=top100_api_unavailable error=%s", type(exc).__name__)
-        if _is_bot_self_query(question):
-            activities.append(("AFL bot capabilities", "\n".join(BOT_IDENTITY_FACTS), ""))
+            return UNAVAILABLE
         try:
-            return await grounded_answer(self.groq, self.knowledge, question=question,
-                context=context, activities=activities, allow_admin=allow_admin)
+            plan = await plan_conversation(self.groq, question, context)
+            social = planned_social_reply(plan.kind)
+            if social:
+                return social
+            activities = []
+            if is_activity_question(plan.question, context):
+                try:
+                    records = await self.top100_activities.fetch_relevant(plan.question, context)
+                    activities = [(a.title, self._format_top100_activity(a), a.activity_url) for a in records]
+                    logger.info("event=activity_lookup results=%s", len(activities))
+                except Exception as exc:
+                    logger.warning("event=top100_api_unavailable error=%s", type(exc).__name__)
+            if _is_bot_self_query(question):
+                activities.append(("AFL bot capabilities", "\n".join(BOT_IDENTITY_FACTS), ""))
+            # The original request remains authoritative; the routing model's rewrite is
+            # untrusted context for reference resolution, never factual evidence.
+            answer = await grounded_answer(self.groq, self.knowledge, question=question,
+                context=context + "\nReference resolution (not evidence): " + plan.question,
+                activities=activities, allow_admin=allow_admin)
+            if answer:
+                return answer
+            logger.info("event=conversation_clarification reason=no_approved_answer")
+            return UNVERIFIED
         except GroqKeyPoolExhausted as exc:
             await self._handle_groq_exhausted(exc)
         except Exception as exc:
             logger.warning("event=knowledge_answer_withheld error=%s", type(exc).__name__)
-        return None
+        return UNAVAILABLE
 
     async def _generate_known_reply(
         self,
@@ -1421,7 +1463,7 @@ class Runtime:
             msg.sender_jid,
             msg.chat_jid,
             msg.message_id,
-            msg.text,
+            "[redacted]",
         )
         # Check for PDF requests in DM
         if self._is_pdf_request(msg.text):
@@ -1458,7 +1500,15 @@ class Runtime:
             )
             return
 
-        if not self.stub_known:
+        if await self._handle_human_help(msg):
+            return
+        social = simple_reply(msg.text)
+        if social:
+            await self._send_or_reply(msg.chat_obj, social, msg.event_obj)
+            self.recent.add_bot_reply(msg.chat_jid, social, private=True)
+            logger.info("event=conversation_replied kind=social scope=dm")
+            return
+        if not self.stub_known and self.knowledge is None:
             await self._notify_admins_dm(msg)
             return
         is_voice = getattr(msg, "is_voice_request", False)
@@ -2242,10 +2292,37 @@ class Runtime:
 
     # --- Admin notification ---
 
+    async def _handle_human_help(self, msg: IncomingGroupMessage | IncomingUserDm) -> bool:
+        if not requests_human(msg.text):
+            return False
+        key = (msg.chat_jid, msg.sender_jid)
+        now = time.monotonic()
+        # Bound storage and suppress repeated requests from the same person/chat for 30 minutes.
+        self._human_help_notified = {k: t for k, t in self._human_help_notified.items() if now - t < 1800}
+        if key in self._human_help_notified:
+            reply = "I've already sent your request to an admin. They can follow up when available."
+        else:
+            body = (format_unknown_group(msg, "human_help") if isinstance(msg, IncomingGroupMessage)
+                    else format_unknown_dm(msg))
+            sent = await self._send_admin_notify(body, trigger="human_help", chat=msg.chat_jid,
+                                                 message_id=msg.message_id)
+            if sent:
+                self._human_help_notified[key] = now
+                reply = "I've sent your request to an admin. They can follow up when available."
+            else:
+                reply = "I couldn't reach an admin right now. Please contact the organiser directly or try again later."
+        await self._send_or_reply(msg.chat_obj, reply, msg.event_obj)
+        self.recent.add_bot_reply(msg.chat_jid, reply, private=isinstance(msg, IncomingUserDm))
+        return True
+
     async def _notify_admins_dm(self, msg: IncomingUserDm) -> None:
+        if not requests_human(msg.text):
+            return
         await self._send_admin_notify(format_unknown_dm(msg), trigger="dm", chat=msg.chat_jid, message_id=msg.message_id)
 
     async def _notify_admins(self, msg: IncomingGroupMessage, trigger: str) -> None:
+        if not requests_human(msg.text):
+            return
         await self._send_admin_notify(
             format_unknown_group(msg, trigger),
             trigger=trigger,
@@ -2292,11 +2369,11 @@ class Runtime:
         trigger: str,
         chat: str,
         message_id: str,
-    ) -> None:
+    ) -> bool:
         targets = self.inbox.targets()
         if not targets:
             logger.warning("event=admin_notify_skipped reason=no_admin_target")
-            return
+            return False
         sent = 0
         for target in targets:
             try:
@@ -2313,3 +2390,5 @@ class Runtime:
                 message_id,
                 sent,
             )
+
+        return bool(sent)

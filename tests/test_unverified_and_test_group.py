@@ -235,8 +235,8 @@ def test_user_dm_reply_forwards_unverified_facts_to_admin():
     assert "⚠️ *Unverified Info Used in Reply*" in client.sent[1][1]
 
 
-def test_admin_question_in_group_notifies_admin_on_unknown():
-    """When an admin asks an unanswerable question in group, admin is notified."""
+def test_admin_question_in_group_does_not_notify_admin_on_unknown():
+    """An unanswerable question is not an implicit request for admin escalation."""
     client = FakeClient()
     groq = FakeGroq("UNKNOWN")
     runtime = Runtime(_settings(groq_api_key="gsk_test"), client, groq=groq)
@@ -255,11 +255,8 @@ def test_admin_question_in_group_notifies_admin_on_unknown():
 
     asyncio.run(run())
 
-    # Silent in group, but admin receives DM notification
-    assert len(client.sent) == 1
-    target, body = client.sent[0]
-    assert "❓ *Unanswered Question*" in body
-    assert "When is secret hackathon?" in body
+    assert client.sent == []
+    assert runtime.notify_count == 0
 
 
 def test_bot_phone_registered_in_own_users():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from unipod_bot.conversation import addressed_to_bot, is_short_followup
 from unipod_bot.fact_check import looks_like_factual_claim
 from unipod_bot.incoming import IncomingGroupMessage
 from unipod_bot.models import IncomingMessage
@@ -39,6 +40,10 @@ def group_reply_trigger(
     # is directed at them.  Don't answer on their behalf.
     if combined:
         return None
+    if addressed_to_bot(stripped):
+        return "mention"
+    if is_short_followup(stripped):
+        return "question"
     if _SUMMARY_TRIGGER_RE.search(stripped):
         return "summary"
     if _REMINDER_TRIGGER_RE.search(stripped):
