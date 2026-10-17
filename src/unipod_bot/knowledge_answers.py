@@ -54,8 +54,11 @@ def complete_excerpt(quote: str, text: str) -> bool:
 
 async def grounded_answer(groq, library: KnowledgeLibrary, *, question: str,
                           context: str = "", activities: list[tuple[str, str, str]] | None = None,
-                          allow_admin: bool = False) -> str | None:
-    excerpts = await asyncio.to_thread(library.search, question, context=context, allow_admin=allow_admin)
+                          allow_admin: bool = False, search_question: str | None = None) -> str | None:
+    # A normalized search query can retrieve candidates, but only the original
+    # question is presented as the user's request to the evidence selector.
+    excerpts = await asyncio.to_thread(library.search, search_question or question,
+                                      context=context, allow_admin=allow_admin)
     sources = [EvidenceSource(x.source_id, x.entry.title, x.text, x.entry.source_url, x.entry.id, x.entry.content)
                for x in excerpts]
     for index, (title, content, url) in enumerate((activities or [])[:5]):

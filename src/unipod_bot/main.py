@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from threading import Thread
 from importlib.metadata import version
 
 from neonize.aioze.client import NewAClient
@@ -93,13 +94,23 @@ async def async_main(settings: Settings) -> None:
     daily_report = asyncio.create_task(runtime.run_daily_report(), name="unipod-daily-report")
     reminders = asyncio.create_task(runtime.run_reminders(), name="unipod-reminders")
     logger.info("event=connecting hint=scan_qr_if_first_run")
+    admin_server = None
     try:
+        if settings.bot_admin_api_port:
+            from unipod_bot.admin_api import AdminAPI, make_server
+            admin_server = make_server(AdminAPI(runtime, settings.bot_admin_api_token),
+                asyncio.get_running_loop(), settings.bot_admin_api_bind, settings.bot_admin_api_port)
+            Thread(target=admin_server.serve_forever, name="afl-admin-api", daemon=True).start()
+            logger.info("event=admin_api_ready authentication=required")
         await client.connect()
         await client.idle()
     except asyncio.CancelledError:
         raise
     finally:
         logger.info("event=stopping")
+        if admin_server is not None:
+            await asyncio.to_thread(admin_server.shutdown)
+            admin_server.server_close()
         all_tasks = (worker, ingest_worker, ingest_flush, heartbeat, health_check, daily_report, reminders)
         for task in all_tasks:
             task.cancel()

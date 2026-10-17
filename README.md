@@ -573,3 +573,23 @@ uv sync --group dev
 uv run pytest -q
 uv run top100-afl-bot --check
 ```
+
+## Optional Top100 admin workspace bridge
+
+The Top100 admin app can manage the same local knowledge library and send reviewed
+announcements through a private authenticated API. This API is disabled by default:
+`BOT_ADMIN_API_PORT=0`. To connect it deliberately, provision a high-entropy shared
+secret (32+ ASCII characters) in the two server environments. Bot settings are
+`BOT_ADMIN_API_TOKEN`, `BOT_ADMIN_API_PORT=8090` and a private `BOT_ADMIN_API_BIND`.
+The Top100 server uses `AFL_BOT_ADMIN_URL` and `AFL_BOT_ADMIN_TOKEN`. No key belongs
+in a browser or `NEXT_PUBLIC_` setting. Do not publish a host port or modify other
+services' network access without an operator-approved connection plan.
+
+The server reuses the existing knowledge catalog and requires an authenticated web
+admin actor. Text/readable PDF submissions are drafts by default; explicit audience
+review and publication are still required. Announcements use a separate SQLite
+journal on the existing volume, are restricted to exactly one configured test group,
+and require a short-lived actor-bound preview before Send. A transaction claims each
+send once. Unconfirmed sends are never automatically retried; inspect WhatsApp first.
+A process restart preserves sending/sent state. No actual announcement is sent during
+a deployment. The API does not accept arbitrary target groups or bot shell commands.

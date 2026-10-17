@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -240,8 +240,18 @@ class Settings:
     knowledge_library_enabled: bool = True
     knowledge_group_jid: str | None = None
     knowledge_db_path: Path | None = None
+    bot_admin_api_port: int = 0
+    bot_admin_api_bind: str = "127.0.0.1"
+    bot_admin_api_token: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        if not 0 <= self.bot_admin_api_port <= 65535:
+            raise ValueError("BOT_ADMIN_API_PORT must be 0 (disabled) or a valid port.")
+        if self.bot_admin_api_bind not in {"127.0.0.1", "0.0.0.0"}:
+            raise ValueError("BOT_ADMIN_API_BIND must be loopback or a private-container binding.")
+        if self.bot_admin_api_port and (not self.bot_admin_api_token
+                or len(self.bot_admin_api_token) < 32 or not self.bot_admin_api_token.isascii()):
+            raise ValueError("BOT_ADMIN_API_TOKEN must contain at least 32 ASCII characters when the API is enabled.")
         if self.knowledge_group_jid:
             group = self.knowledge_group_jid.strip().lower()
             if not re.fullmatch(r"[\w-]+@g\.us", group):
@@ -354,6 +364,9 @@ def load_settings(*, dotenv: bool = True) -> Settings:
             or "https://www.top100afl.com"
         ),
         admin_jids=admin_jids,
+        bot_admin_api_port=int(os.getenv("BOT_ADMIN_API_PORT", "0") or "0"),
+        bot_admin_api_bind=os.getenv("BOT_ADMIN_API_BIND", "127.0.0.1"),
+        bot_admin_api_token=_optional_str("BOT_ADMIN_API_TOKEN"),
         knowledge_library_enabled=parse_bool(os.getenv("KNOWLEDGE_LIBRARY_ENABLED"), default=True),
         knowledge_group_jid=_optional_str("KNOWLEDGE_GROUP_JID"),
         knowledge_db_path=Path(os.environ["KNOWLEDGE_DB_PATH"]) if _optional_str("KNOWLEDGE_DB_PATH") else None,

@@ -220,7 +220,7 @@ class AdminInbox:
         out: list[Any] = []
         for target in (*self._by_phone.values(), *self._extra.values()):
             key = jid_str(target).lower()
-            if not key or key in seen:
+            if not key or key in seen or key.partition("@")[2] not in {"s.whatsapp.net", "lid"}:
                 continue
             seen.add(key)
             out.append(target)
@@ -358,6 +358,8 @@ class Runtime:
         """Send a critical alert to all admin DMs (never to groups)."""
         targets = self.inbox.targets()
         for target in targets:
+            if jid_str(target).partition("@")[2] not in {"s.whatsapp.net", "lid"}:
+                continue
             try:
                 await self.client.send_message(target, body)
             except Exception:
@@ -549,6 +551,8 @@ class Runtime:
         )
         targets = self.inbox.targets()
         for target in targets:
+            if jid_str(target).partition("@")[2] not in {"s.whatsapp.net", "lid"}:
+                continue
             try:
                 await self.client.send_message(target, body)
             except Exception:
@@ -865,7 +869,7 @@ class Runtime:
             push_name=getattr(msg, "push_name", "") or "Admin",
         )
         self._buffer_for_ingest(synthetic_msg)
-        logger.info("event=admin_fact_ingested sender=%s text=%s", msg.sender_jid, text)
+        logger.info("event=admin_fact_ingested")
 
     async def _admin_health_reply(self) -> str:
         """Run an on-demand health check and return formatted result."""
@@ -1309,7 +1313,7 @@ class Runtime:
             # untrusted context for reference resolution, never factual evidence.
             answer = await grounded_answer(self.groq, self.knowledge, question=question,
                 context=context + "\nReference resolution (not evidence): " + plan.question,
-                activities=activities, allow_admin=allow_admin)
+                activities=activities, allow_admin=allow_admin, search_question=plan.question)
             if answer:
                 return answer
             logger.info("event=conversation_clarification reason=no_approved_answer")
@@ -2347,6 +2351,8 @@ class Runtime:
             return
         sent = 0
         for target in targets:
+            if jid_str(target).partition("@")[2] not in {"s.whatsapp.net", "lid"}:
+                continue
             try:
                 await self.client.send_message(target, body)
                 sent += 1
@@ -2376,6 +2382,8 @@ class Runtime:
             return False
         sent = 0
         for target in targets:
+            if jid_str(target).partition("@")[2] not in {"s.whatsapp.net", "lid"}:
+                continue
             try:
                 await self.client.send_message(target, body)
                 sent += 1

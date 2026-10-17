@@ -24,9 +24,10 @@ UNAVAILABLE = (
 )
 _BOT = r"(?:afl(?:\s+bot)?|bot)"
 _HUMAN = re.compile(
-    r"^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"^(?:please\s+)?(?:(?:can|could|would)\s+(?:you|someone)\s+)?"
     r"(?:(?:connect|put)\s+me\s+(?:to|with|through to)|"
-    r"(?:i\s+(?:want|need|would like)\s+to\s+)?(?:speak|talk)\s+to|"
+    r"(?:(?:can|could)\s+i\s+|i\s+(?:want|need|would like)\s+to\s+)?(?:speak|talk)\s+to|"
+    r"i\s+(?:want|need|would like)\s+help\s+from|"
     r"(?:contact|notify|ask)\s+)\s*(?:an?\s+|the\s+)?(?:admin|human|organiser|organizer|support team)\b",
     re.I,
 )

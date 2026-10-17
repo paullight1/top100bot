@@ -163,3 +163,24 @@ def test_admin_social_message_is_a_conversation_not_an_automatic_knowledge_draft
         assert runtime.client.sent and "help" in runtime.client.sent[-1][1].lower()
         assert runtime.knowledge.list_entries() == []
     asyncio.run(run())
+
+
+def test_typo_normalization_improves_search_without_replacing_original_question(tmp_path):
+    async def run():
+        runtime = Runtime(settings(tmp_path), Client())
+        entry = runtime.knowledge.create_draft(title="Mentoring", content="Mentoring is on Tuesdays.",
+            actor="admin", source_chat="admin", source_message="typo-source", audience="members")
+        runtime.knowledge.publish(entry.id, actor="admin")
+        class Model:
+            async def chat_completion(self, messages, **kwargs):
+                payload = json.loads(messages[-1]["content"])
+                if "sources" not in payload:
+                    return json.dumps({"kind": "answer", "question": "When is mentoring?"})
+                assert payload['question'] == 'wen is mentroign'
+                source = payload['sources'][0]
+                return json.dumps({'answers_question': True, 'conflict': False,
+                    'evidence': [{'source': source['id'], 'quote': source['text']}]})
+        runtime.groq = Model()
+        reply = await runtime._library_answer('wen is mentroign', '')
+        assert 'Mentoring is on Tuesdays.' in reply
+    asyncio.run(run())
